@@ -1,0 +1,84 @@
+name: Bug report
+description: Something roz-mcp did wrong — a bad result, a crash, or a tool that misbehaved.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A bug is easiest to fix when it can be reproduced, so
+        please give the exact tool call and, where you can, a public or open-source
+        solution it happens on.
+  - type: input
+    id: version
+    attributes:
+      label: roz-mcp version
+      description: Output of `roz-mcp --version`.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      description: Which client was talking to the server?
+      options:
+        - Claude Code
+        - Cursor
+        - VS Code Copilot Chat
+        - Codex CLI
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 / Ubuntu 24.04 / macOS 15"
+    validations:
+      required: true
+  - type: textarea
+    id: solution-shape
+    attributes:
+      label: Solution shape
+      description: Rough size and layout — project count, target frameworks, and whether it is a .sln or .slnx.
+      placeholder: "~35 projects, net10.0 + net48, .slnx"
+    validations:
+      required: false
+  - type: textarea
+    id: tool-call
+    attributes:
+      label: Tool call and arguments
+      description: The exact tool name and the arguments you passed (or the model passed on your behalf).
+      placeholder: |
+        find_references
+        symbolNames=["IAffiliateService"], referenceKinds=invocations
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log excerpt
+      description: On Windows, logs are at `%LOCALAPPDATA%/Zphil.Roz/logs/`. Paste the relevant lines.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: repro-oss
+    attributes:
+      label: Reproducibility
+      options:
+        - label: I can reproduce this on a public/OSS codebase
+          required: false

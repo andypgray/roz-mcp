@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a new tool, prompt, or change to existing behavior.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every tool loaded into an agent session costs schema tokens whether or not it
+        gets called, so proposals here are weighed against that cost. The evidence
+        question below is not a formality — it is how we decide what earns a place in
+        the default set.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What are you trying to do that roz-mcp makes hard, slow, or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed tool, prompt, or change
+      description: What should the server do differently? If it is a new tool or prompt, sketch its inputs and output.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What evidence would show this pays for its context cost?
+      description: >
+        What measurable outcome would tell us this is net-positive — fewer turns, lower
+        cost, a class of mistake avoided? Changes to the default tool set are decided by
+        an A/B run (see CONTRIBUTING.md), so this sets the bar the proposal aims at.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other tools, prompts, or workflows you tried or rejected, and why.
+    validations:
+      required: false

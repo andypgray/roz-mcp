@@ -1,0 +1,13 @@
+@using TestFixture.Shapes
+
+<div class="shape-card">
+    <h3>@Shape.GetType().Name</h3>
+    <p>Area: @Shape.Area.ToString("F2")</p>
+    <p>Perimeter: @Shape.Perimeter.ToString("F2")</p>
+    <p>@Shape.Describe()</p>
+</div>
+
+@code {
+    [Parameter]
+    public required IShape Shape { get; set; }
+}

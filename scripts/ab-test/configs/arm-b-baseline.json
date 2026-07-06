@@ -1,0 +1,7 @@
+{
+  "name": "arm-b-baseline",
+  "description": "Arm B: Claude with no MCP servers and no project CLAUDE.md snippet - baseline behavior.",
+  "inject_claude_md_snippet": false,
+  "mcp_servers": {},
+  "extra_allowed_tools": []
+}

@@ -1,0 +1,33 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.nupkg
+
+## IDE
+.vs/
+.idea/
+*.sln.DotSettings.user
+*.lscache
+
+## Build
+artifacts/
+nupkg/
+TestResults/
+
+## OS
+Thumbs.db
+.DS_Store
+
+## Editor / agent config
+.claude/
+
+## Python tooling (A/B harness)
+__pycache__/
+.mypy_cache/
+.ruff_cache/

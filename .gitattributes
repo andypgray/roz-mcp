@@ -1,0 +1,7 @@
+# Non-UTF-8 encoding test fixtures — preserve exact bytes (no EOL/encoding normalization).
+# These deliberately hold a UTF-16 BOM / Windows-1252 high bytes to exercise encoding detection.
+tests/Zphil.Roz.Tests/Fixtures/TestSolutions/TestFixture/Services/Utf16Sample.cs binary
+tests/Zphil.Roz.Tests/Fixtures/TestSolutions/TestFixture/Services/Cp1252Sample.cs binary
+
+# Shell scripts: always LF, even on Windows checkouts (Git Bash cannot run CRLF scripts).
+*.sh text eol=lf

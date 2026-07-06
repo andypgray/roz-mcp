@@ -1,0 +1,31 @@
+{
+  "name": "arm-prompt-recipe",
+  "description": "Prompt-efficacy arm: a fully-equipped user who invoked the slash command. ROZ_TOOLS=all (every tool incl. editing), production snippet injected. The task brief is the rendered prompt recipe (see runner's render bridge). Single acceptance arm — graded against oracles + trap verifiers, not a delta.",
+  "inject_claude_md_snippet": true,
+  "mcp_servers": {
+    "roz": {
+      "type": "stdio",
+      "command": "roz-mcp",
+      "env": { "ROZ_TOOLS": "all" }
+    }
+  },
+  "extra_allowed_tools": [
+    "mcp__roz__find_symbol",
+    "mcp__roz__get_symbols_overview",
+    "mcp__roz__go_to_definition",
+    "mcp__roz__find_overloads",
+    "mcp__roz__find_references",
+    "mcp__roz__find_implementations",
+    "mcp__roz__get_type_hierarchy",
+    "mcp__roz__analyze_method",
+    "mcp__roz__analyze_change_impact",
+    "mcp__roz__edit_symbol",
+    "mcp__roz__rename_symbol",
+    "mcp__roz__replace_content",
+    "mcp__roz__add_usings",
+    "mcp__roz__remove_unused_usings",
+    "mcp__roz__get_diagnostics",
+    "mcp__roz__get_workspace_info",
+    "mcp__roz__get_unused_references"
+  ]
+}

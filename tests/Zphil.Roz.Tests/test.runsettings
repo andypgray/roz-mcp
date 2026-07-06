@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage" assemblyQualifiedName="Coverlet.Collector.DataCollection.CoverletInstrumentationCollector,coverlet.collector">
+        <Configuration>
+          <Include>[Zphil.Roz*]*</Include>
+          <Exclude>[Zphil.Roz.Tests]*</Exclude>
+          <ExcludeByAttribute>ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <UseSourceLink>true</UseSourceLink>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

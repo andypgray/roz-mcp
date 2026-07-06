@@ -1,0 +1,12 @@
+{
+  "solution": {
+    "path": "TestFixture.sln",
+    "projects": [
+      "TestFixture\\TestFixture.csproj",
+      "TestFixture.Legacy\\TestFixture.Legacy.csproj",
+      "TestFixture.MultiTfm\\TestFixture.MultiTfm.csproj",
+      "TestFixture.Friend\\TestFixture.Friend.csproj",
+      "TestFixture.Tests\\TestFixture.Tests.csproj"
+    ]
+  }
+}

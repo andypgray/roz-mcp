@@ -1,0 +1,67 @@
+# Publishes Zphil.Roz to NuGet and creates a GitHub release when a v* tag is pushed.
+#
+# Auth: NuGet trusted publishing (OIDC). The job trades a GitHub-signed OIDC token for
+# a short-lived (1-hour, single-use) nuget.org API key at run time via the NuGet/login
+# step — there is NO long-lived NUGET_API_KEY secret to store or rotate. This requires a
+# trusted-publishing policy on nuget.org (owner + repo + this workflow's file name) and
+# the `id-token: write` permission below.
+#
+# Why pack in CI rather than locally: packing here means SourceLink embeds a commit
+# that actually exists on GitHub, so debugger source-stepping resolves. The symbol
+# package (.snupkg) is produced alongside the .nupkg and `dotnet nuget push` uploads
+# it automatically. ContinuousIntegrationBuild engages via the csproj's `$(CI)`
+# condition (GitHub Actions sets CI=true), which normalizes embedded paths.
+#
+# Build/test scope: the test project is built and tested, which compiles src/
+# transitively. We deliberately do NOT build the whole Zphil.Roz.slnx here — that
+# would pull in the StressTests project, which clones nopCommerce and is Windows-only.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write  # create the GitHub release
+  id-token: write  # mint the GitHub OIDC token for NuGet trusted publishing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify tag matches csproj version
+        run: |
+          V=$(grep -oP '(?<=<Version>)[^<]+' src/Zphil.Roz/Zphil.Roz.csproj)
+          [ "v$V" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != csproj $V"; exit 1; }
+
+      - name: Build (test project builds src/ transitively)
+        run: dotnet build tests/Zphil.Roz.Tests/Zphil.Roz.Tests.csproj -c Release
+
+      - name: Test
+        run: dotnet test tests/Zphil.Roz.Tests/Zphil.Roz.Tests.csproj -c Release --no-build --settings tests/Zphil.Roz.Tests/ci.runsettings
+
+      - name: Pack (produces .nupkg + .snupkg)
+        run: dotnet pack src/Zphil.Roz/Zphil.Roz.csproj -c Release -o artifacts
+
+      # Requested right before the push (not earlier) so the 1-hour, single-use key can't
+      # expire behind the slow build/test steps. `user` is the nuget.org profile name
+      # (not an email); the OIDC token is minted by the id-token: write permission above.
+      - name: NuGet login (OIDC → short-lived API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: andypgray
+
+      - name: Push to NuGet
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Create GitHub release
+        run: gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

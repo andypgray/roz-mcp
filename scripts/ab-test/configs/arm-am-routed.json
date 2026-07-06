@@ -1,0 +1,26 @@
+{
+  "name": "arm-am-routed",
+  "description": "Arm AM-routed (R): roz-mcp with ROZ_TOOLS=default,analyze_method (11 tools); VARIANT snippet injected (project-instructions-snippet.analyze-method.md) carrying one method-comprehension routing row. The promotion-deciding arm: default-add PLUS snippet routing. Differs from arm-am-on by exactly the injected snippet.",
+  "inject_claude_md_snippet": true,
+  "claude_md_snippet_path": "src/Zphil.Roz/project-instructions-snippet.analyze-method.md",
+  "mcp_servers": {
+    "roz": {
+      "type": "stdio",
+      "command": "roz-mcp",
+      "env": { "ROZ_TOOLS": "default,analyze_method" }
+    }
+  },
+  "extra_allowed_tools": [
+    "mcp__roz__find_symbol",
+    "mcp__roz__get_symbols_overview",
+    "mcp__roz__go_to_definition",
+    "mcp__roz__find_overloads",
+    "mcp__roz__find_references",
+    "mcp__roz__find_implementations",
+    "mcp__roz__get_type_hierarchy",
+    "mcp__roz__rename_symbol",
+    "mcp__roz__get_diagnostics",
+    "mcp__roz__get_workspace_info",
+    "mcp__roz__analyze_method"
+  ]
+}
