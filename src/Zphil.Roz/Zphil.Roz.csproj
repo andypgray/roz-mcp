@@ -67,7 +67,7 @@
 
     <!-- Override vulnerable transitive pulled in by Microsoft.Build.Tasks.Core (NU1903). -->
     <ItemGroup>
-        <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.8" ExcludeAssets="runtime" PrivateAssets="all" />
+        <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.9" ExcludeAssets="runtime" PrivateAssets="all" />
     </ItemGroup>
 
 </Project>
