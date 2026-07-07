@@ -1,0 +1,25 @@
+{
+  "name": "arm-a-default",
+  "description": "Arm A (stripped): roz-mcp with ROZ_TOOLS=default (11 tools); production snippet injected.",
+  "inject_claude_md_snippet": true,
+  "mcp_servers": {
+    "roz": {
+      "type": "stdio",
+      "command": "roz-mcp",
+      "env": { "ROZ_TOOLS": "default" }
+    }
+  },
+  "extra_allowed_tools": [
+    "mcp__roz__find_symbol",
+    "mcp__roz__get_symbols_overview",
+    "mcp__roz__go_to_definition",
+    "mcp__roz__find_overloads",
+    "mcp__roz__find_references",
+    "mcp__roz__find_implementations",
+    "mcp__roz__analyze_change_impact",
+    "mcp__roz__get_type_hierarchy",
+    "mcp__roz__rename_symbol",
+    "mcp__roz__get_diagnostics",
+    "mcp__roz__get_workspace_info"
+  ]
+}

@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+        <OutputType>Exe</OutputType>
+        <NoWarn>$(NoWarn);xUnit1051</NoWarn>
+    </PropertyGroup>
+
+    <!-- nopCommerce test fixture acquisition -->
+    <PropertyGroup>
+        <NopCommitSha>c91ad8a10666c2d14a348f4f7e6e53acdf9fd200</NopCommitSha>
+        <NopCacheDir>$(LOCALAPPDATA)\Zphil.Roz\nopCommerce\$(NopCommitSha)</NopCacheDir>
+        <NopSolutionPath>$(NopCacheDir)\src\NopCommerce.sln</NopSolutionPath>
+    </PropertyGroup>
+
+    <Target Name="AcquireNopCommerce" BeforeTargets="Build" Condition="'$(OS)' == 'Windows_NT' And !Exists('$(NopSolutionPath)')">
+        <Message Importance="high" Text="Cloning nopCommerce at $(NopCommitSha) into $(NopCacheDir)..." />
+        <RemoveDir Directories="$(NopCacheDir)" Condition="Exists('$(NopCacheDir)')" />
+        <MakeDir Directories="$(NopCacheDir)" />
+        <Exec Command="git init &quot;$(NopCacheDir)&quot;" />
+        <Exec Command="git -C &quot;$(NopCacheDir)&quot; remote add origin https://github.com/nopSolutions/nopCommerce.git" />
+        <Exec Command="git -C &quot;$(NopCacheDir)&quot; fetch --depth 1 origin $(NopCommitSha)" />
+        <Exec Command="git -C &quot;$(NopCacheDir)&quot; checkout FETCH_HEAD" />
+        <Delete Files="$(NopCacheDir)\global.json" Condition="Exists('$(NopCacheDir)\global.json')" />
+        <Message Importance="high" Text="Restoring nopCommerce solution..." />
+        <!-- Use only nuget.org to avoid authentication failures from private feeds -->
+        <Exec Command="dotnet restore &quot;$(NopSolutionPath)&quot; --source https://api.nuget.org/v3/index.json" />
+        <Message Importance="high" Text="nopCommerce ready at $(NopCacheDir)" />
+    </Target>
+
+    <Target Name="GenerateNopPaths" BeforeTargets="CoreCompile" DependsOnTargets="AcquireNopCommerce">
+        <PropertyGroup>
+            <NopPathsFile>$(IntermediateOutputPath)NopPaths.g.cs</NopPathsFile>
+            <NopCacheDirEscaped>$(NopCacheDir.Replace('\','\\'))</NopCacheDirEscaped>
+            <NopSolutionPathEscaped>$(NopSolutionPath.Replace('\','\\'))</NopSolutionPathEscaped>
+        </PropertyGroup>
+        <WriteLinesToFile File="$(NopPathsFile)" Overwrite="true" Lines="&#xD;&#xA;// &lt;auto-generated/&gt;&#xD;&#xA;namespace Zphil.Roz.StressTests%3B&#xD;&#xA;&#xD;&#xA;internal static partial class NopPaths&#xD;&#xA;{&#xD;&#xA;    internal const string CacheDir = &quot;$(NopCacheDirEscaped)&quot;%3B&#xD;&#xA;    internal const string SolutionPath = &quot;$(NopSolutionPathEscaped)&quot;%3B&#xD;&#xA;    internal const string CommitSha = &quot;$(NopCommitSha)&quot;%3B&#xD;&#xA;}&#xD;&#xA;" />
+        <ItemGroup>
+            <Compile Include="$(NopPathsFile)" Condition="Exists('$(NopPathsFile)')" />
+        </ItemGroup>
+    </Target>
+
+    <ItemGroup>
+        <PackageReference Include="coverlet.collector" Version="10.0.1" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+        <PackageReference Include="Shouldly" Version="4.*" />
+        <PackageReference Include="xunit.v3" Version="3.2.2" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Zphil.Roz\Zphil.Roz.csproj" />
+    </ItemGroup>
+
+    <!-- Shared with the unit-test project: fixture solutions ship unrestored in a fresh clone. -->
+    <ItemGroup>
+        <Compile Include="..\Zphil.Roz.Tests\Fixtures\FixtureRestorer.cs" Link="Fixtures\FixtureRestorer.cs" />
+    </ItemGroup>
+
+    <!-- Exclude DiagnosticFixture .cs files from compilation; copy them to output as content -->
+    <ItemGroup>
+        <Compile Remove="Fixtures/TestSolutions/**/*.cs" />
+        <Content Include="Fixtures/TestSolutions/**" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,75 @@
+diff --git a/src/Libraries/Nop.Core/CommonHelper.cs b/src/Libraries/Nop.Core/CommonHelper.cs
+index eaedd62..7af458b 100644
+--- a/src/Libraries/Nop.Core/CommonHelper.cs
++++ b/src/Libraries/Nop.Core/CommonHelper.cs
+@@ -66,7 +66,8 @@ public partial class CommonHelper
+     /// <returns>true if the string is a valid IpAddress and false if it's not</returns>
+     public static bool IsValidIpAddress(string ipAddress)
+     {
+-        return IPAddress.TryParse(ipAddress, out var _);
++        return IPAddress.TryParse(ipAddress, out var address)
++            && address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
+     }
+ 
+     /// <summary>
+@@ -74,12 +75,15 @@ public partial class CommonHelper
+     /// </summary>
+     /// <param name="length">Length</param>
+     /// <returns>Result string</returns>
+-    public static string GenerateRandomDigitCode(int length)
++    public static string GenerateRandomDigitCode(int length, bool avoidLeadingZero = false)
+     {
+         using var random = new SecureRandomNumberGenerator();
+         var str = string.Empty;
+         for (var i = 0; i < length; i++)
+-            str = string.Concat(str, random.Next(10).ToString());
++        {
++            var minDigit = avoidLeadingZero && i == 0 ? 1 : 0;
++            str = string.Concat(str, random.Next(minDigit, 10).ToString());
++        }
+         return str;
+     }
+ 
+@@ -139,16 +143,6 @@ public partial class CommonHelper
+         return str ?? string.Empty;
+     }
+ 
+-    /// <summary>
+-    /// Indicates whether the specified strings are null or empty strings
+-    /// </summary>
+-    /// <param name="stringsToValidate">Array of strings to validate</param>
+-    /// <returns>Boolean</returns>
+-    public static bool AreNullOrEmpty(params string[] stringsToValidate)
+-    {
+-        return stringsToValidate.Any(string.IsNullOrEmpty);
+-    }
+-
+     /// <summary>
+     /// Compare two arrays
+     /// </summary>
+diff --git a/src/Libraries/Nop.Core/Security/EncryptionKeyMetadata.cs b/src/Libraries/Nop.Core/Security/EncryptionKeyMetadata.cs
+new file mode 100644
+index 0000000..08903f4
+--- /dev/null
++++ b/src/Libraries/Nop.Core/Security/EncryptionKeyMetadata.cs
+@@ -0,0 +1,20 @@
++namespace Nop.Core.Security;
++
++/// <summary>
++/// Internal metadata describing the active encryption-key format. Used only within Nop.Core.
++/// </summary>
++internal static class EncryptionKeyMetadata
++{
++    /// <summary>
++    /// The internal revision of the key-derivation format.
++    /// </summary>
++    internal const int KeyFormatRevision = 2;
++
++    /// <summary>
++    /// Returns a short label describing the current key format.
++    /// </summary>
++    internal static string DescribeFormat()
++    {
++        return $"nop-key-v{KeyFormatRevision}";
++    }
++}

@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore tests/Zphil.Roz.Tests/Zphil.Roz.Tests.csproj
+
+      - name: Build
+        run: dotnet build tests/Zphil.Roz.Tests/Zphil.Roz.Tests.csproj --no-restore
+
+      - name: Test
+        run: dotnet test tests/Zphil.Roz.Tests/Zphil.Roz.Tests.csproj --no-build --logger "console;verbosity=normal" --collect:"XPlat Code Coverage" --settings tests/Zphil.Roz.Tests/ci.runsettings

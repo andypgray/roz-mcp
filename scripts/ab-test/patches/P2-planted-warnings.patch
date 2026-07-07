@@ -1,0 +1,34 @@
+diff --git a/src/Libraries/Nop.Core/AbTest/PlantedDiagnostics.cs b/src/Libraries/Nop.Core/AbTest/PlantedDiagnostics.cs
+new file mode 100644
+index 0000000..cf1f0d0
+--- /dev/null
++++ b/src/Libraries/Nop.Core/AbTest/PlantedDiagnostics.cs
+@@ -0,0 +1,28 @@
++namespace Nop.Core.AbTest;
++
++/// <summary>
++/// Planted by the A/B prompt-efficacy harness (scripts/ab-test). Each method carries one
++/// fixable compiler warning the fix_diagnostics recipe must root-cause-fix — delete the dead
++/// local — rather than silence with a suppression. Not referenced anywhere; it exists only to
++/// give the recipe a deterministic, known-answer work-list in Nop.Core.
++/// </summary>
++public static class PlantedDiagnostics
++{
++    public static int FirstUnused()
++    {
++        int abtestUnusedCounter;   // CS0168: variable is declared but never used
++        return 1;
++    }
++
++    public static int SecondUnused()
++    {
++        string abtestUnusedLabel;   // CS0168: variable is declared but never used
++        return 2;
++    }
++
++    public static int AssignedNeverRead()
++    {
++        var abtestDeadValue = 42;   // CS0219: variable assigned but its value is never used
++        return 3;
++    }
++}

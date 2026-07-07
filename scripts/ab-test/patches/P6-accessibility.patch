@@ -1,0 +1,154 @@
+diff --git a/src/Libraries/Nop.Core/AbTest/PlantedAccessibilityTargets.cs b/src/Libraries/Nop.Core/AbTest/PlantedAccessibilityTargets.cs
+new file mode 100644
+index 0000000..a1a5ea1
+--- /dev/null
++++ b/src/Libraries/Nop.Core/AbTest/PlantedAccessibilityTargets.cs
+@@ -0,0 +1,106 @@
++namespace Nop.Core.AbTest;
++
++// Planted by the A/B prompt-efficacy harness (scripts/ab-test) for the tighten_accessibility scenario.
++// Scope the recipe to THIS FILE. `Planted_Narrow_*` are over-broad and SHOULD be narrowed (they are
++// used only in-assembly or only within their type). `Planted_Trap_*` must NOT be narrowed — narrowing
++// each is unsafe for a different reason: cross-assembly use (analyze_change_impact says Unsafe), a
++// CS0053 inconsistent-accessibility break (the tool reports Compatible — build is the backstop), an
++// interface implementation pinned public, or a Razor-markup reference find_references cannot see.
++// The cross-assembly / CS0053 / interface traps are enforced by the build; the Razor trap and the two
++// narrowings are enforced by accessibility-is.
++
++// ── Should narrow ─────────────────────────────────────────────────────────────
++
++// Public type used ONLY within Nop.Core (by PlantedInAssemblyConsumer) -> narrow to INTERNAL.
++public sealed class Planted_Narrow_AssemblyOnly
++{
++    public int Value()
++    {
++        return 1;
++    }
++}
++
++internal static class PlantedInAssemblyConsumer
++{
++    internal static int Use()
++    {
++        return new Planted_Narrow_AssemblyOnly().Value();
++    }
++}
++
++// Public method used ONLY within its declaring type (by CallSite) -> narrow to PRIVATE.
++public sealed class Planted_Narrow_TypeOnlyHolder
++{
++    public int Planted_Narrow_TypeOnly()
++    {
++        return 2;
++    }
++
++    public int CallSite()
++    {
++        return Planted_Narrow_TypeOnly();
++    }
++}
++
++// ── Traps: must NOT be narrowed ───────────────────────────────────────────────
++
++// TRAP 1 (cross-assembly use): used from Nop.Services -> narrowing to internal is Unsafe (build red).
++public sealed class Planted_Trap_CrossAssemblyService
++{
++    public int Handle()
++    {
++        return 3;
++    }
++}
++
++// TRAP 2 (interface implementation, by design): Run implements a public interface, so it is pinned
++// public and cannot be narrowed (CS0535/CS0737 — build red).
++public interface IPlanted_Trap_Contract
++{
++    int Run();
++}
++
++public sealed class Planted_Trap_InterfaceImpl : IPlanted_Trap_Contract
++{
++    public int Run()
++    {
++        return 4;
++    }
++}
++
++// TRAP 3 (pure CS0053): IPlanted_Trap_Exposer (pinned public by a cross-assembly parameter use in
++// Nop.Services) exposes Planted_Trap_ExposedReturnType in its Get() signature. Narrowing the type to
++// internal is a CS0053 inconsistent-accessibility break — but analyze_change_impact reports Compatible
++// (it checks reference-access, not member-exposure), so this is the recipe's known blind spot and the
++// build is the backstop.
++public sealed class Planted_Trap_ExposedReturnType
++{
++    public int Data()
++    {
++        return 5;
++    }
++}
++
++public interface IPlanted_Trap_Exposer
++{
++    Planted_Trap_ExposedReturnType Get();
++}
++
++public sealed class Planted_Trap_ExposerImpl : IPlanted_Trap_Exposer
++{
++    public Planted_Trap_ExposedReturnType Get()
++    {
++        return new Planted_Trap_ExposedReturnType();
++    }
++}
++
++// TRAP 4 (Razor markup): referenced only from Nop.Web/Views/AbTest/PlantedAccess.cshtml across
++// assemblies, invisible to find_references -> narrowing to internal breaks the markup at runtime
++// (views are runtime-compiled), so the recipe's markup text-search must keep it public.
++public static class Planted_Trap_MarkupHelper
++{
++    public static string Planted_Trap_RazorOnly()
++    {
++        return "rendered-from-markup";
++    }
++}
+diff --git a/src/Libraries/Nop.Services/AbTest/PlantedAccessibilityConsumer.cs b/src/Libraries/Nop.Services/AbTest/PlantedAccessibilityConsumer.cs
+new file mode 100644
+index 0000000..28e194a
+--- /dev/null
++++ b/src/Libraries/Nop.Services/AbTest/PlantedAccessibilityConsumer.cs
+@@ -0,0 +1,23 @@
++using Nop.Core.AbTest;
++
++namespace Nop.Services.AbTest;
++
++// Planted by the A/B prompt-efficacy harness (scripts/ab-test) for the tighten_accessibility scenario.
++// A cross-assembly consumer (Nop.Services references Nop.Core) that PINS the traps public: narrowing
++// the referenced symbols to internal would not compile here. Never called — it exists only to create
++// the cross-assembly references the recipe must respect.
++internal static class PlantedAccessibilityConsumer
++{
++    // Pins Planted_Trap_CrossAssemblyService public (cross-assembly call -> Unsafe to narrow).
++    internal static int UseCrossAssemblyService()
++    {
++        return new Planted_Trap_CrossAssemblyService().Handle();
++    }
++
++    // References the interface TYPE (not the exposed return type), pinning IPlanted_Trap_Exposer
++    // public so that Planted_Trap_ExposedReturnType stays CS0053-pinned by its Get() signature.
++    internal static bool UsesExposerContract(IPlanted_Trap_Exposer exposer)
++    {
++        return exposer is not null;
++    }
++}
+diff --git a/src/Presentation/Nop.Web/Views/AbTest/PlantedAccess.cshtml b/src/Presentation/Nop.Web/Views/AbTest/PlantedAccess.cshtml
+new file mode 100644
+index 0000000..3a8ccae
+--- /dev/null
++++ b/src/Presentation/Nop.Web/Views/AbTest/PlantedAccess.cshtml
+@@ -0,0 +1,7 @@
++@* Planted by the A/B prompt-efficacy harness (scripts/ab-test) for the tighten_accessibility
++   Razor blind-spot trap. References Planted_Trap_RazorOnly across assemblies (it lives in Nop.Core),
++   which find_references cannot see — the recipe's markup text-search must find this and keep the
++   method public. Views are runtime-compiled (RazorCompileOnPublish=false), so this is never
++   build-compiled; the accessibility-is verifier is the detector. *@
++@using Nop.Core.AbTest
++<div>@Planted_Trap_MarkupHelper.Planted_Trap_RazorOnly()</div>

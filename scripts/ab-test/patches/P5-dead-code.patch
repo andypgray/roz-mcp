@@ -1,0 +1,119 @@
+diff --git a/src/Libraries/Nop.Core/AbTest/PlantedCleanupTargets.cs b/src/Libraries/Nop.Core/AbTest/PlantedCleanupTargets.cs
+new file mode 100644
+index 0000000..278e871
+--- /dev/null
++++ b/src/Libraries/Nop.Core/AbTest/PlantedCleanupTargets.cs
+@@ -0,0 +1,100 @@
++using Microsoft.AspNetCore.Builder;
++using Microsoft.Extensions.Configuration;
++using Microsoft.Extensions.DependencyInjection;
++using Nop.Core.Infrastructure;
++
++namespace Nop.Core.AbTest;
++
++// Planted by the A/B prompt-efficacy harness (scripts/ab-test) for the cleanup_dead_code scenario.
++// Scope the recipe to THIS FILE. `Planted_Dead_*` symbols are genuinely unused and MUST be removed.
++// `Planted_Trap_*` symbols are reachable in ways find_references cannot see (Razor markup, DI
++// registration, interface dispatch, reflection-scanned startup) or are public API behind the
++// confirmation gate, and MUST survive. The reachable traps are deliberately INTERNAL so the
++// public-API gate cannot save them — only the correct markup / DI / dispatch / framework reasoning
++// keeps them. Exactly one trap is public, to exercise the gate itself.
++
++// ── Dead: no references anywhere; the recipe must REMOVE these ────────────────
++
++internal sealed class Planted_Dead_UnusedType
++{
++    public int Value()
++    {
++        return 0;
++    }
++}
++
++internal static class Planted_Dead_OrphanHelper
++{
++    internal static int Planted_Dead_UnusedHelperMethod()
++    {
++        return 0;
++    }
++}
++
++// ── Traps: reachable invisibly (INTERNAL, so the gate can't save them) ────────
++
++internal static class Planted_Trap_MarkupHelper
++{
++    // Called only from PlantedRazorView.cshtml — invisible to find_references; the recipe's
++    // markup text-search must find this name and keep the method.
++    internal static string Planted_Trap_RazorOnly()
++    {
++        return "rendered-from-markup";
++    }
++}
++
++internal sealed class Planted_Trap_DiRegisteredService
++{
++    public int Compute()
++    {
++        return 1;
++    }
++}
++
++internal interface IPlanted_Trap_Dispatch
++{
++    string Describe();
++}
++
++internal sealed class Planted_Trap_DispatchImpl : IPlanted_Trap_Dispatch
++{
++    public string Describe()
++    {
++        return "via-interface";
++    }
++}
++
++// A real INopStartup — nopCommerce discovers it by assembly scanning, so it is a reflection-driven
++// framework entry point the recipe must keep. Its registrations make the trap services DI-live.
++internal sealed class Planted_Trap_DiStartup : INopStartup
++{
++    public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
++    {
++        services.AddScoped<Planted_Trap_DiRegisteredService>();
++        services.AddScoped<IPlanted_Trap_Dispatch, Planted_Trap_DispatchImpl>();
++    }
++
++    public void Configure(IApplicationBuilder application)
++    {
++    }
++
++    public int Order => 3000;
++}
++
++// ── Trap: genuinely-unused PUBLIC API — the gate must keep it ─────────────────
++
++public static class Planted_Trap_PublicApi
++{
++    // Public + unused: behind the ask gate, so it must NOT be deleted without confirmation
++    // (and under bypassPermissions there is none) — keep it and report it as pending.
++    public static int Planted_Trap_PublicUnused()
++    {
++        return 7;
++    }
++
++    // Dead INTERNAL member inside a surviving public type — the recipe should remove just this.
++    internal static int Planted_Dead_OrphanMethod()
++    {
++        return 13;
++    }
++}
+diff --git a/src/Libraries/Nop.Core/AbTest/PlantedRazorView.cshtml b/src/Libraries/Nop.Core/AbTest/PlantedRazorView.cshtml
+new file mode 100644
+index 0000000..27a008b
+--- /dev/null
++++ b/src/Libraries/Nop.Core/AbTest/PlantedRazorView.cshtml
+@@ -0,0 +1,7 @@
++@* Planted by the A/B prompt-efficacy harness (scripts/ab-test) for the cleanup_dead_code
++   Razor blind-spot trap. This markup references Planted_Trap_RazorOnly, which find_references
++   cannot see — the recipe's markup text-search must find this reference and KEEP the method.
++   Nop.Core is a class library (not a Razor project), so this file is never compiled; it exists
++   only so the symbol is markup-live. *@
++@using Nop.Core.AbTest
++<div>@Planted_Trap_MarkupHelper.Planted_Trap_RazorOnly()</div>

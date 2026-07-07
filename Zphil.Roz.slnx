@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Zphil.Roz/Zphil.Roz.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Zphil.Roz.StressTests/Zphil.Roz.StressTests.csproj" />
+    <Project Path="tests/Zphil.Roz.Tests/Zphil.Roz.Tests.csproj" />
+  </Folder>
+</Solution>
