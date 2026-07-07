@@ -1,6 +1,6 @@
 # roz-mcp
 
-[![CI](https://github.com/andypgray/roz-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/andypgray/roz-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/andypgray/roz-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/andypgray/roz-mcp/actions/workflows/ci.yml) [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/andypgray/roz-mcp?label=openssf+scorecard)](https://scorecard.dev/viewer/?uri=github.com/andypgray/roz-mcp)
 
 roz is an MCP server that gives C# coding agents the compiler's view of a solution. It finds every real reference to a symbol, including the edges text search misses: overrides, interface dispatch, DI registrations. It renames a symbol across the whole solution in one call, previews the blast radius of a proposed change, and makes edits that verify themselves against the compiler in the same round trip. roz runs as a .NET global tool over stdio; one `roz-mcp setup` command configures Claude Code, Cursor, VS Code Copilot Chat, or Codex CLI.
 
@@ -174,7 +174,7 @@ roz was stress-tested against seven open-source C# codebases before 1.0.0, and e
 
 ## Contributing
 
-Contributions are welcome. Bug reports reproduced on public codebases, new conservative executors, client-compatibility fixes, and evaluation or harness improvements land best. See [CONTRIBUTING.md](https://github.com/andypgray/roz-mcp/blob/main/CONTRIBUTING.md) for dev setup (.NET 10 SDK, Windows or Linux) and the test architecture. Default-preset changes want an A/B run, and HOLD verdicts are normal here (two of our own tools have them). The deep dive on internals (error-handling conventions, location/FQN resolution, DI-container detection, verified writes, and precision limits) is in [ARCHITECTURE.md](https://github.com/andypgray/roz-mcp/blob/main/ARCHITECTURE.md).
+Contributions are welcome. Bug reports reproduced on public codebases, new conservative executors, client-compatibility fixes, and evaluation or harness improvements land best. See [CONTRIBUTING.md](https://github.com/andypgray/roz-mcp/blob/main/CONTRIBUTING.md) for dev setup (.NET 10 SDK, Windows or Linux) and the test architecture. Default-preset changes want an A/B run, and HOLD verdicts are normal here (two of our own tools have them). The deep dive on internals (error-handling conventions, location/FQN resolution, DI-container detection, verified writes, and precision limits) is in [ARCHITECTURE.md](https://github.com/andypgray/roz-mcp/blob/main/ARCHITECTURE.md). To report a security issue privately, see [SECURITY.md](https://github.com/andypgray/roz-mcp/blob/main/SECURITY.md).
 
 ## License
 

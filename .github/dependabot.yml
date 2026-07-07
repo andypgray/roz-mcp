@@ -1,0 +1,16 @@
+# Version-update PRs open on the public repo. Until the dev-home flip, treat each PR
+# as a porting signal: apply the bump to private master, sync, and the PR closes itself.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: nuget
+    directories:
+      - /src/Zphil.Roz
+      - /tests/Zphil.Roz.Tests
+      - /tests/Zphil.Roz.StressTests
+    schedule:
+      interval: weekly
