@@ -14,3 +14,10 @@ updates:
       - /tests/Zphil.Roz.StressTests
     schedule:
       interval: weekly
+    groups:
+      # Roslyn ships Microsoft.CodeAnalysis.* as a version-locked family (each pins
+      # Microsoft.CodeAnalysis.Common at an exact version); bump them in one PR so a
+      # single-package split never reintroduces an NU1107 Common conflict.
+      roslyn:
+        patterns:
+          - "Microsoft.CodeAnalysis.*"
