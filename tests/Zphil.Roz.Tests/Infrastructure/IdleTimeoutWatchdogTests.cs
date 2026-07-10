@@ -11,6 +11,7 @@ namespace Zphil.Roz.Tests.Infrastructure;
 ///     <see cref="Stopwatch.GetElapsedTime(long, long)" /> math is exact. The class
 ///     resets the watchdog's static state before and after every test.
 /// </summary>
+[Collection("WatchdogStatics")]
 public sealed class IdleTimeoutWatchdogTests : IDisposable
 {
     public IdleTimeoutWatchdogTests()

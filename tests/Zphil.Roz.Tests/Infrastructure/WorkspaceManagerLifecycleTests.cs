@@ -122,7 +122,9 @@ public sealed class WorkspaceManagerLifecycleTests
         try
         {
             // Wait until the load is parked pre-ready (holding the gate, ready signal not yet fired).
-            await reachedPreReady.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            // 120s ceiling: under a fully-parallel suite run the fixture load can take well over 30s
+            // just to reach pre-ready (observed 2026-07-08); a healthy run parks in seconds.
+            await reachedPreReady.Task.WaitAsync(TimeSpan.FromSeconds(120), TestContext.Current.CancellationToken);
 
             // This reader blocks on solutionReadyTask.
             Task<Solution> reader = wm.GetSolutionAsync(TestContext.Current.CancellationToken);

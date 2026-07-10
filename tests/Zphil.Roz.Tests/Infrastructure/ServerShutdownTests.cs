@@ -10,14 +10,20 @@ namespace Zphil.Roz.Tests.Infrastructure;
 ///     test seam — no real process exits during these tests. Mirrors the static-state reset
 ///     idiom used by <see cref="IdleTimeoutWatchdogTests" />.
 /// </summary>
+[Collection("WatchdogStatics")]
 public sealed class ServerShutdownTests : IDisposable
 {
     public ServerShutdownTests()
     {
         ServerShutdown.ResetForTests();
+        IdleTimeoutWatchdog.ResetForTests();
     }
 
-    public void Dispose() => ServerShutdown.ResetForTests();
+    public void Dispose()
+    {
+        ServerShutdown.ResetForTests();
+        IdleTimeoutWatchdog.ResetForTests();
+    }
 
     [Fact]
     public void ExitWith_RegisteredDisposer_RunsBeforeExit()
@@ -184,4 +190,56 @@ public sealed class ServerShutdownTests : IDisposable
         // Arrange / Act / Assert — guard rail; passing null indicates a wiring bug.
         Should.Throw<ArgumentNullException>(() => ServerShutdown.RegisterDisposer(null!));
     }
+
+    [Fact]
+    public async Task ExitWith_InFlightCallInProgress_WaitsForItBeforeDisposingAndExiting()
+    {
+        // N2 — a mid-flight tool call (e.g. an edit batch mid-write) must finish before shutdown runs
+        // disposers or exits, so Environment.Exit can't tear a non-atomic swap. Enter a call, start the
+        // shutdown on a background thread, prove it is blocked (nothing disposed, not exited), then
+        // complete the call and prove it proceeds.
+        IdleTimeoutWatchdog.EnterCall(); // in-flight count = 1
+
+        var disposerRan = false;
+        ServerShutdown.RegisterDisposer(() =>
+        {
+            disposerRan = true;
+            return ValueTask.CompletedTask;
+        });
+
+        using ManualResetEventSlim exited = new();
+        var shutdown = Task.Run(() => ServerShutdown.ExitWith(
+            "test", exited.Set, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5)));
+
+        // While the call is in flight, the drain blocks: no disposer has run and exit hasn't fired.
+        exited.Wait(TimeSpan.FromMilliseconds(300)).ShouldBeFalse();
+        disposerRan.ShouldBeFalse();
+
+        // Completing the call releases the drain; shutdown proceeds to disposers + exit.
+        IdleTimeoutWatchdog.ExitCall(); // in-flight count = 0
+        exited.Wait(TimeSpan.FromSeconds(5)).ShouldBeTrue();
+        disposerRan.ShouldBeTrue();
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public void ExitWith_InFlightCallStuck_ExitsAfterDrainTimeout()
+    {
+        // N2 bound — a call that never completes must not hold shutdown hostage. With the in-flight count
+        // pinned at 1 and a short drain timeout, ExitWith still runs disposers and exits.
+        IdleTimeoutWatchdog.EnterCall(); // count stays 1 (no matching ExitCall)
+
+        var exited = false;
+        ServerShutdown.ExitWith("test", () => exited = true, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(200));
+
+        exited.ShouldBeTrue();
+    }
 }
+
+/// <summary>
+///     Serializes the two suites that share the static in-flight counter — <see cref="ServerShutdown" />
+///     reads <see cref="IdleTimeoutWatchdog.InFlightCount" /> during its N2 drain — so their static-state
+///     manipulation can't interleave under xUnit's parallel collections.
+/// </summary>
+[CollectionDefinition("WatchdogStatics", DisableParallelization = true)]
+public sealed class WatchdogStaticsCollection;

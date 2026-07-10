@@ -9,12 +9,16 @@
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>roz-mcp</ToolCommandName>
         <PackageId>Zphil.Roz</PackageId>
-        <Version>1.0.0</Version>
+        <Version>1.0.1</Version>
         <Description>roz-mcp is an MCP server that gives C# coding agents the compiler's view of a solution: Roslyn navigation, blast-radius analysis, and conservative verified writes (solution-wide rename, structured edits, signature changes, code fixes). It was A/B-measured per model tier with a published harness and stress-tested against seven open-source codebases.</Description>
         <Authors>Andrew Gray</Authors>
         <Copyright>Copyright (c) 2026 Andrew Gray</Copyright>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>icon.png</PackageIcon>
+        <!-- McpServer package type marks this for the MCP Registry / NuGet MCP discovery.
+             PackAsTool already applies the DotnetTool type; the two coexist. -->
+        <PackageType>McpServer</PackageType>
         <PackageTags>roslyn;mcp;model-context-protocol;csharp;dotnet-tool;refactoring;rename;code-analysis;claude;cursor;copilot;codex;ai</PackageTags>
         <PackageProjectUrl>https://github.com/andypgray/roz-mcp</PackageProjectUrl>
         <RepositoryUrl>https://github.com/andypgray/roz-mcp</RepositoryUrl>
@@ -30,7 +34,12 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+        <!-- PackagePath must use forward slashes: on the Linux release runner a backslash is not a
+             path separator and the manifest would pack as `.mcp//server.json`, which breaks
+             nuget.org's VS Code MCP config detection (it wants exactly `.mcp/server.json`). -->
+        <None Include="..\..\README.md" Pack="true" PackagePath="/" />
+        <None Include="icon.png" Pack="true" PackagePath="/" />
+        <None Include="..\..\.mcp\server.json" Pack="true" PackagePath=".mcp/server.json" />
     </ItemGroup>
 
     <ItemGroup>

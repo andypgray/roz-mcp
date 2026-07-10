@@ -21,6 +21,7 @@ namespace Zphil.Roz.Services;
 /// </remarks>
 internal sealed class EditSession
 {
+    private readonly Dictionary<string, string> originalDiskContent = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, StagedFile> staged = new(StringComparer.OrdinalIgnoreCase);
     private readonly WorkspaceManager workspaceManager;
 
@@ -69,9 +70,19 @@ internal sealed class EditSession
     public async Task<(string Content, Encoding Encoding)> ReadFileAsync(string absPath, CancellationToken ct)
     {
         string fullPath = Path.GetFullPath(absPath);
-        return staged.TryGetValue(fullPath, out StagedFile existing)
-            ? (existing.Content, existing.Encoding)
-            : await FileUtility.ReadFileWithEncodingAsync(absPath, ct);
+        if (staged.TryGetValue(fullPath, out StagedFile existing))
+        {
+            return (existing.Content, existing.Encoding);
+        }
+
+        (string Content, Encoding Encoding) fromDisk = await FileUtility.ReadFileWithEncodingAsync(absPath, ct);
+
+        // Record the first on-disk content read per path as the write-time conflict baseline. CommitAsync
+        // verifies disk still holds this before writing, so an external edit landing during the batch
+        // aborts the commit instead of silently clobbering it. First read wins (TryAdd): later ops read the
+        // staged result, and the batch is conceptually based on this first-read content.
+        originalDiskContent.TryAdd(fullPath, fromDisk.Content);
+        return fromDisk;
     }
 
     /// <summary>
@@ -100,13 +111,13 @@ internal sealed class EditSession
     /// </summary>
     public async Task CommitAsync(CancellationToken ct)
     {
-        List<(string FilePath, string Content, Encoding Encoding)> fileChanges = staged
-            .Select(kv => (kv.Key, kv.Value.Content, kv.Value.Encoding))
+        List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)> fileChanges = staged
+            .Select(kv => (kv.Key, kv.Value.Content, kv.Value.Encoding, originalDiskContent.GetValueOrDefault(kv.Key)))
             .ToList();
 
-        await AtomicFileWriter.WriteBatchAtomicAsync(fileChanges, ct);
+        await AtomicFileWriter.WriteBatchAtomicAsync(fileChanges, workspaceManager.GetDisplayPath, ct);
 
-        foreach ((string filePath, string content, Encoding encoding) in fileChanges)
+        foreach ((string filePath, string content, Encoding encoding, string? _) in fileChanges)
         {
             workspaceManager.ScheduleFileChanged(filePath, content, encoding);
         }

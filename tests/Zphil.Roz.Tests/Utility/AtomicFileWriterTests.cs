@@ -27,6 +27,15 @@ public class AtomicFileWriterTests : IDisposable
         return path;
     }
 
+    // Adapts the mechanics-focused batch tests (write/rollback) to WriteBatchAtomicAsync's production
+    // signature without opting them into write-time conflict detection: a null ExpectedOriginal per entry
+    // skips the check. The B2 conflict path is covered by WriteConflictDetectionTests.
+    private static Task WriteBatch(List<(string Path, string Content, Encoding Encoding)> files, CancellationToken ct) =>
+        AtomicFileWriter.WriteBatchAtomicAsync(
+            files.Select(f => (f.Path, f.Content, f.Encoding, (string?)null)).ToList(),
+            static p => p,
+            ct);
+
     // ── WriteAtomicAsync ────────────────────────────────────────────────────
 
     [Fact]
@@ -175,7 +184,7 @@ public class AtomicFileWriterTests : IDisposable
         };
 
         // Act
-        await AtomicFileWriter.WriteBatchAtomicAsync(files, CancellationToken.None);
+        await WriteBatch(files, CancellationToken.None);
 
         // Assert
         File.ReadAllText(path1).ShouldBe("new-a");
@@ -187,7 +196,7 @@ public class AtomicFileWriterTests : IDisposable
     public async Task WriteBatchAtomicAsync_EmptyList_Succeeds()
     {
         // Act & Assert — should not throw
-        await AtomicFileWriter.WriteBatchAtomicAsync([], CancellationToken.None);
+        await WriteBatch([], CancellationToken.None);
     }
 
     [Fact]
@@ -206,7 +215,7 @@ public class AtomicFileWriterTests : IDisposable
         };
 
         // Act
-        Exception? ex = await Record.ExceptionAsync(() => AtomicFileWriter.WriteBatchAtomicAsync(files, CancellationToken.None));
+        Exception? ex = await Record.ExceptionAsync(() => WriteBatch(files, CancellationToken.None));
 
         // Assert — originals unchanged
         ex.ShouldNotBeNull();
@@ -240,7 +249,7 @@ public class AtomicFileWriterTests : IDisposable
         try
         {
             // Act
-            Exception? ex = await Record.ExceptionAsync(() => AtomicFileWriter.WriteBatchAtomicAsync(files, CancellationToken.None));
+            Exception? ex = await Record.ExceptionAsync(() => WriteBatch(files, CancellationToken.None));
 
             // Assert — should have thrown, and first file should be rolled back
             ex.ShouldNotBeNull();
@@ -277,7 +286,7 @@ public class AtomicFileWriterTests : IDisposable
         try
         {
             // Act
-            Exception? ex = await Record.ExceptionAsync(() => AtomicFileWriter.WriteBatchAtomicAsync(files, CancellationToken.None));
+            Exception? ex = await Record.ExceptionAsync(() => WriteBatch(files, CancellationToken.None));
 
             // Assert — newly created file should be cleaned up on rollback
             ex.ShouldNotBeNull();
@@ -303,10 +312,103 @@ public class AtomicFileWriterTests : IDisposable
         };
 
         // Act
-        Exception? ex = await Record.ExceptionAsync(() => AtomicFileWriter.WriteBatchAtomicAsync(files, cts.Token));
+        Exception? ex = await Record.ExceptionAsync(() => WriteBatch(files, cts.Token));
 
         // Assert
         ex.ShouldNotBeNull();
         File.ReadAllText(path1).ShouldBe("original");
+    }
+
+    // ── Write-time conflict detection: encoding fidelity ────────────────────
+    // The expected-original comparison must decode the on-disk bytes with the entry's encoding.
+    // The session tools are UTF-8-gated (ReadFileWithEncodingAsync rejects everything else), but the
+    // fork tools (rename_symbol / apply_code_fix / change_signature) carry whatever encoding Roslyn
+    // loaded the document with — UTF-16 and legacy codepages included — and wrote such files
+    // correctly before conflict detection existed. Assuming UTF-8 here made every fork write to a
+    // non-UTF-8 file a deterministic false conflict.
+
+    private static Task WriteBatchExpecting(
+        string path, string content, Encoding encoding, string? expectedOriginal, CancellationToken ct) =>
+        AtomicFileWriter.WriteBatchAtomicAsync([(path, content, encoding, expectedOriginal)], static p => p, ct);
+
+    [Fact]
+    public async Task WriteBatchAtomicAsync_Utf16TargetUnchanged_WritesWithoutConflict()
+    {
+        // Arrange — a UTF-16 target whose on-disk content still matches the expected original.
+        const string Original = "class Utf16Target { }\n";
+        string path = Path.Combine(_tempDir, "utf16.cs");
+        File.WriteAllText(path, Original, Encoding.Unicode);
+
+        // Act
+        await WriteBatchExpecting(path, Original + "// edited\n", Encoding.Unicode, Original, CancellationToken.None);
+
+        // Assert — the write landed (no false conflict) and round-tripped as UTF-16.
+        File.ReadAllText(path).ShouldBe(Original + "// edited\n");
+        byte[] bytes = File.ReadAllBytes(path);
+        bytes.Take(2).ShouldBe(Encoding.Unicode.GetPreamble());
+    }
+
+    [Fact]
+    public async Task WriteBatchAtomicAsync_LegacyCodepageTargetUnchanged_WritesWithoutConflict()
+    {
+        // Arrange — a Windows-1252 target with bytes that are invalid UTF-8 (© = A9, é = E9), the
+        // encoding Roslyn falls back to when a BOM-less file fails strict UTF-8 decoding.
+        Encoding windows1252 = CodePagesEncodingProvider.Instance.GetEncoding(1252)!;
+        const string Original = "// © déjà vu\nclass LegacyTarget { }\n";
+        string path = Path.Combine(_tempDir, "legacy1252.cs");
+        File.WriteAllText(path, Original, windows1252);
+
+        // Act
+        await WriteBatchExpecting(path, Original + "// edited\n", windows1252, Original, CancellationToken.None);
+
+        // Assert
+        File.ReadAllText(path, windows1252).ShouldBe(Original + "// edited\n");
+    }
+
+    [Fact]
+    public async Task WriteBatchAtomicAsync_Utf16TargetChangedOnDisk_ThrowsConflictAndWritesNothing()
+    {
+        // Arrange — the same UTF-16 target, but disk no longer matches the expected original: the
+        // encoding-aware decode must still detect a genuine out-of-band change.
+        const string External = "class RewrittenOutOfBand { }\n";
+        string path = Path.Combine(_tempDir, "utf16-conflict.cs");
+        File.WriteAllText(path, External, Encoding.Unicode);
+
+        // Act / Assert
+        await Should.ThrowAsync<FileConflictException>(() =>
+            WriteBatchExpecting(path, "// must not land\n", Encoding.Unicode, "class Stale { }\n", CancellationToken.None));
+        File.ReadAllText(path).ShouldBe(External);
+    }
+
+    [Fact]
+    public async Task WriteBatchAtomicAsync_ExternalRewriteOnlyAddedUtf8Bom_WritesWithoutConflict()
+    {
+        // Arrange — a BOM-less UTF-8 entry whose target gained a UTF-8 BOM out-of-band with identical
+        // content. The expected side is always BOM-free, so a BOM-only toggle is not a content
+        // conflict (pins the leniency the original UTF-8-only check had).
+        const string Original = "class BomToggled { }\n";
+        string path = CreateFile("bom-added.cs", Original);
+        File.WriteAllText(path, Original, new UTF8Encoding(true));
+
+        // Act
+        await WriteBatchExpecting(path, Original + "// edited\n", new UTF8Encoding(false), Original, CancellationToken.None);
+
+        // Assert
+        File.ReadAllText(path).ShouldBe(Original + "// edited\n");
+    }
+
+    [Fact]
+    public async Task WriteBatchAtomicAsync_EmptyExpectedTargetDeleted_ThrowsConflictAndDoesNotResurrect()
+    {
+        // Arrange — the target was EMPTY when the edit read it, then deleted out-of-band. The missing
+        // file must read as a conflict outright: comparing a ""-sentinel against the empty expected
+        // content would wave the write through and resurrect the file the user just deleted.
+        string path = CreateFile("deleted-empty.cs", "");
+        File.Delete(path);
+
+        // Act / Assert
+        await Should.ThrowAsync<FileConflictException>(() =>
+            WriteBatchExpecting(path, "// resurrected\n", Encoding.UTF8, "", CancellationToken.None));
+        File.Exists(path).ShouldBeFalse();
     }
 }

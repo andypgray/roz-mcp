@@ -255,9 +255,10 @@ internal sealed class WorkspaceManager : IAsyncDisposable
     ///     <see cref="IDisposable" /> that unsubscribes when disposed.
     /// </summary>
     /// <remarks>
-    ///     Multiple callers can subscribe; all registered handlers fire on each reload.
-    ///     If any handler throws, subsequent handlers don't run and the reload aborts —
-    ///     matching the prior single-callback fail-fast behavior.
+    ///     Multiple callers can subscribe; all registered handlers fire on each reload, <em>after</em> the
+    ///     workspace swap (B1). Handlers are invoked independently — a throwing handler is logged, not
+    ///     propagated, so it can neither skip a sibling handler's cache invalidation nor abort the reload
+    ///     (which has already committed by the time handlers run).
     /// </remarks>
     internal IDisposable RegisterBeforeReload(Action callback)
     {
@@ -265,7 +266,30 @@ internal sealed class WorkspaceManager : IAsyncDisposable
         return new BeforeReloadSubscription(this, callback);
     }
 
-    private void InvokeBeforeReloadCallbacks() => BeforeReload?.Invoke();
+    private void InvokeBeforeReloadCallbacks()
+    {
+        // Invoked after the reload's swap (B1), so the reload is already committed when handlers fire — a
+        // throwing handler can no longer abort it. Invoke each independently and log rather than propagate,
+        // so one handler's failure can't skip another's cache invalidation (e.g. a throwing ClearBaseline
+        // must not leave FixerCatalog's cache stale across the reload).
+        Delegate[]? handlers = BeforeReload?.GetInvocationList();
+        if (handlers is null)
+        {
+            return;
+        }
+
+        foreach (Delegate handler in handlers)
+        {
+            try
+            {
+                ((Action)handler)();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Before-reload handler threw (reload already committed); continuing");
+            }
+        }
+    }
 
     /// <summary>
     ///     Returns the solution directory, awaiting the solution load if necessary.
@@ -451,6 +475,9 @@ internal sealed class WorkspaceManager : IAsyncDisposable
                 if (knownTimestamps.ContainsKey(fullPath))
                 {
                     logger.LogInformation("File deleted externally, scheduling reload: {Path}", fullPath);
+                    // Direct reload, not TriggerAutoReloadAsync — see the reload-vs-warmup coalescing note
+                    // in ReconcileAllExternalEditsAsync. A delete must reload against disk, not coalesce
+                    // against an in-flight load that opened the file before the deletion.
                     await ScheduleReloadAsync(ct: ct);
                     return;
                 }
@@ -511,6 +538,12 @@ internal sealed class WorkspaceManager : IAsyncDisposable
             if (!File.Exists(fullPath))
             {
                 logger.LogInformation("Document deleted externally, scheduling reload: {Path}", fullPath);
+                // Call ScheduleReloadAsync directly rather than coalescing through TriggerAutoReloadAsync:
+                // the coalescing check keys on "a load is in flight", but an initial/warmup load already
+                // opened the solution BEFORE this deletion, so coalescing against it would leave the
+                // deleted document in the snapshot (a stale read). A direct reload re-reads disk and is
+                // the correctness guarantee the entry-time sweep owes its caller. The residual
+                // concurrent-sweep double-reload is a bounded waste, tracked in docs/backlog (N3).
                 await ScheduleReloadAsync(ct: ct);
                 return;
             }
@@ -580,7 +613,6 @@ internal sealed class WorkspaceManager : IAsyncDisposable
     public async Task ScheduleReloadAsync(
         IProgress<ProgressNotificationValue>? progress = null, CancellationToken ct = default)
     {
-        InvokeBeforeReloadCallbacks();
         await StopExternalEditWatcherAsync();
 
         await gate.WaitAsync(ct);
@@ -601,8 +633,25 @@ internal sealed class WorkspaceManager : IAsyncDisposable
                 loadReadyTask = LoadSolutionInternalAsync(progress);
             }
 
+            // Dispose the old workspace (and clear timestamps) immediately after the swap — the swap already
+            // detached toDispose, so this is independent of the before-reload callbacks below. Doing it here,
+            // BEFORE those callbacks, means a throwing handler can't skip this and leak the old
+            // MSBuildWorkspace + its BuildHost child (the very orphan ServerShutdown exists to prevent).
             toDispose?.Dispose();
             knownTimestamps.Clear();
+
+            // Invalidate before-reload state (diagnostic baseline, fixer cache) AFTER the swap, not
+            // before it (B1). Once swapped, workspace is null and solutionReadyTask is a fresh
+            // (incomplete) signal, so GetSolutionIfLoaded() returns null until the new generation is
+            // ready. Clearing here therefore closes the window where a baseline capture scheduled during
+            // the StopExternalEditWatcher / gate-acquire awaits above could read the still-current
+            // pre-swap solution and write a baseline that outlives the reload (ScheduleBaselineCaptureIfNeeded
+            // no-ops forever once a baseline exists). Both subscribers (ClearBaseline,
+            // FixerCatalog.InvalidateCache) only clear cached state; neither needs the old solution current,
+            // and post-swap is strictly safer — nothing can re-capture/re-cache the stale generation while
+            // workspace is null. A reload cancelled at the gate above simply leaves the still-valid baseline
+            // in place, which is correct.
+            InvokeBeforeReloadCallbacks();
         }
         finally
         {
@@ -625,7 +674,11 @@ internal sealed class WorkspaceManager : IAsyncDisposable
             current = loadReadyTask;
         }
 
-        if (current is { IsCompleted: false })
+        // Only a completed load warrants a fresh reload. A null loadReadyTask means DisposeAsync has run
+        // (or is unwinding) — proceeding would resurrect a reload on a disposed workspace (A1); the prior
+        // `is { IsCompleted: false }` check let null through. A non-null-but-incomplete task means a
+        // load/reload is already in flight and will pick up current disk state, so coalesce (N3).
+        if (current is not { IsCompleted: true })
         {
             return;
         }
@@ -1022,7 +1075,7 @@ internal sealed class WorkspaceManager : IAsyncDisposable
             string? solutionDir = SolutionDirectory;
             if (solutionDir is not null)
             {
-                StartExternalEditWatcher(solutionDir);
+                await StartExternalEditWatcherAsync(solutionDir);
             }
         }
         catch (Exception ex)
@@ -1039,7 +1092,7 @@ internal sealed class WorkspaceManager : IAsyncDisposable
         }
     }
 
-    private void StartExternalEditWatcher(string solutionDir)
+    private async Task StartExternalEditWatcherAsync(string solutionDir)
     {
         if (autoRefreshDisabled)
         {
@@ -1067,6 +1120,8 @@ internal sealed class WorkspaceManager : IAsyncDisposable
             Timer t = new(FlushExternalEdits, null, ExternalEditDebounceMs, ExternalEditDebounceMs);
 
             bool started;
+            FileSystemWatcher? oldWatcher;
+            Timer? oldTimer;
             lock (fieldLock)
             {
                 // Warmup now completes before this runs, so a dispose can land between cancelling warmup
@@ -1074,6 +1129,14 @@ internal sealed class WorkspaceManager : IAsyncDisposable
                 // watcher/timer it will never stop. `disposed` is set before that stop and republished
                 // via this same fieldLock, so the check is reliable.
                 started = disposed == 0;
+
+                // Capture any predecessor so we can dispose it after publishing (N3 leak fix). A reload's
+                // StopExternalEditWatcherAsync runs before it acquires the gate; a watcher that a prior
+                // in-flight load published *after* that stop would otherwise be silently overwritten here
+                // and leaked. Disposing it keeps exactly one watcher/timer live at a time.
+                oldWatcher = externalEditWatcher;
+                oldTimer = externalEditFlushTimer;
+
                 if (started)
                 {
                     externalEditWatcher = w;
@@ -1081,10 +1144,19 @@ internal sealed class WorkspaceManager : IAsyncDisposable
                 }
             }
 
+            // Dispose the predecessor (if any) outside the lock. Timer.DisposeAsync drains any in-flight
+            // FlushExternalEdits, which never synchronously takes the gate (it offloads reloads via
+            // Task.Run), so awaiting it while this load holds the gate cannot deadlock.
+            oldWatcher?.Dispose();
+            if (oldTimer is not null)
+            {
+                await oldTimer.DisposeAsync();
+            }
+
             if (!started)
             {
                 w.Dispose();
-                t.Dispose();
+                await t.DisposeAsync();
                 return;
             }
 

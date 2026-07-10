@@ -37,15 +37,32 @@ internal static class FixtureRestorer
     // even if EnsureRestored is also called from more than one place; repeat calls are free.
     private static readonly Lazy<bool> RestoreGate = new(RestoreAll);
 
+    // Set by the cross-assembly overload before the gate is first triggered; null => this test
+    // assembly's own output directory. Only one call path runs per test process (the Tests startup
+    // hook or the StressTests module initializer), so a plain field suffices.
+    private static string? baseDirectoryOverride;
+
     /// <summary>
     ///     Restores every fixture solution once, the first time it is called; thread-safe and free on
     ///     repeat calls. No-ops when everything is already restored.
     /// </summary>
     internal static void EnsureRestored() => _ = RestoreGate.Value;
 
+    /// <summary>
+    ///     Cross-assembly overload for the stress-test project, whose fixture copy lives under its own
+    ///     output directory rather than this test assembly's. Points the one-time restore at
+    ///     <paramref name="baseDirectory" /> before triggering it.
+    /// </summary>
+    internal static void EnsureRestored(string baseDirectory)
+    {
+        baseDirectoryOverride = baseDirectory;
+        _ = RestoreGate.Value;
+    }
+
     private static bool RestoreAll()
     {
-        string baseDirectory = Path.GetDirectoryName(typeof(FixtureRestorer).Assembly.Location)!;
+        string baseDirectory = baseDirectoryOverride
+                               ?? Path.GetDirectoryName(typeof(FixtureRestorer).Assembly.Location)!;
         string testSolutionsDir = Path.Combine(baseDirectory, "Fixtures", "TestSolutions");
         if (!Directory.Exists(testSolutionsDir))
         {

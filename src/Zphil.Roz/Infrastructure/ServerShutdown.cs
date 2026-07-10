@@ -23,7 +23,18 @@ namespace Zphil.Roz.Infrastructure;
 /// </remarks>
 internal static class ServerShutdown
 {
-    private static readonly TimeSpan DefaultDisposalTimeout = TimeSpan.FromSeconds(5);
+    // 12s, not 5s (N6): WorkspaceManager.DisposeAsync's worst case is ~10s — a 5s bound on draining
+    // pending updates plus a 5s bound on acquiring the mutation gate — before it even disposes the
+    // MSBuildWorkspace and its BuildHost child. A 5s per-disposer bound here would abandon that dispose
+    // partway and risk leaking the BuildHost; 12s gives that worst case headroom. Keep in sync with the
+    // two 5s timeouts in WorkspaceManager.DisposeAsync.
+    private static readonly TimeSpan DefaultDisposalTimeout = TimeSpan.FromSeconds(12);
+
+    // How long ExitWith waits for in-flight tool calls to finish before running disposers (N2). Bounds
+    // the window that lets a mid-flight edit batch commit; 5s comfortably covers an atomic File.Move swap
+    // loop while keeping shutdown from being held hostage by a stuck call.
+    private static readonly TimeSpan DefaultInFlightDrainTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan InFlightPollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly Lock disposersLock = new();
     private static readonly List<Func<ValueTask>> disposers = [];
     private static int s_hasExited;
@@ -61,14 +72,15 @@ internal static class ServerShutdown
     ///     Logged at Warning so post-mortems can identify the trigger.
     /// </param>
     public static void ExitWith(string reason) =>
-        ExitWith(reason, static () => Environment.Exit(0), DefaultDisposalTimeout);
+        ExitWith(reason, static () => Environment.Exit(0), DefaultDisposalTimeout, DefaultInFlightDrainTimeout);
 
     /// <summary>
-    ///     Test seam: lets tests substitute the terminal action and shrink the disposal timeout
-    ///     so they can verify the gate, disposal-then-exit order, and timeout fallback without
-    ///     killing the test host.
+    ///     Test seam: lets tests substitute the terminal action and shrink the disposal / in-flight-drain
+    ///     timeouts so they can verify the gate, in-flight drain, disposal-then-exit order, and timeout
+    ///     fallback without killing the test host. <paramref name="inFlightDrainTimeout" /> defaults to
+    ///     <see cref="DefaultInFlightDrainTimeout" /> when null.
     /// </summary>
-    internal static void ExitWith(string reason, Action exit, TimeSpan disposalTimeout)
+    internal static void ExitWith(string reason, Action exit, TimeSpan disposalTimeout, TimeSpan? inFlightDrainTimeout = null)
     {
         if (Interlocked.CompareExchange(ref s_hasExited, 1, 0) != 0)
         {
@@ -76,6 +88,19 @@ internal static class ServerShutdown
         }
 
         Log.Warning("Shutting down: {Reason}", reason);
+
+        // Let an in-flight tool call finish before tearing the process down (N2). This matters most for a
+        // mid-flight edit batch: Environment.Exit skips AtomicFileWriter's rollback catch, so exiting
+        // during its phase-2 File.Move swap loop would leave a partially-written batch on disk. Bounded so
+        // a stuck call can't hold shutdown hostage.
+        //
+        // Residual (accepted): this covers the *executing* call, not a second edit parked on the edit gate.
+        // The idle-count ExitCall (inner GlobalCallToolFilter) runs before editGate.Release (outer
+        // EditSerializationFilter), so a parked edit can begin just as the count hits 0 and the drain
+        // returns. It then still has the disposer-loop window (DefaultDisposalTimeout) to finish before
+        // Environment.Exit. Fully closing this would need the edit gate itself drained here — a second
+        // shutdown seam deliberately not added for this narrow (two-concurrent-edits-at-exit) case.
+        WaitForInFlightCalls(inFlightDrainTimeout ?? DefaultInFlightDrainTimeout);
 
         List<Func<ValueTask>> snapshot;
         lock (disposersLock)
@@ -90,6 +115,24 @@ internal static class ServerShutdown
 
         Log.CloseAndFlush();
         exit();
+    }
+
+    /// <summary>
+    ///     Spins (50 ms poll) until no tool call is in flight or <paramref name="timeout" /> elapses.
+    ///     Synchronous by design — this is the terminal shutdown path, so blocking the caller is fine.
+    /// </summary>
+    private static void WaitForInFlightCalls(TimeSpan timeout)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        long deadlineTicks = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        while (IdleTimeoutWatchdog.InFlightCount > 0 && Environment.TickCount64 < deadlineTicks)
+        {
+            Thread.Sleep(InFlightPollInterval);
+        }
     }
 
     private static void RunDisposerBounded(Func<ValueTask> disposer, TimeSpan timeout)

@@ -15,7 +15,11 @@ internal static class AtomicFileWriter
     ///     Writes content to a temp file, then moves it over the original.
     /// </summary>
     /// <remarks>
-    ///     Guarantees the original is either fully updated or untouched.
+    ///     Guarantees the original is either fully updated or untouched. Unlike
+    ///     <see cref="WriteBatchAtomicAsync" />, this per-op path carries no write-time conflict check: it
+    ///     backs the <c>verify=None</c> single-file edits, whose read→compute→write window is a few
+    ///     milliseconds. That residual lost-update window against a concurrent external write is an
+    ///     accepted risk (a batch/verified edit takes the guarded path instead).
     /// </remarks>
     internal static async Task WriteAtomicAsync(
         string filePath, string content, Encoding encoding, CancellationToken ct)
@@ -33,16 +37,24 @@ internal static class AtomicFileWriter
     }
 
     /// <summary>
-    ///     Writes multiple files atomically using a two-phase temp-then-swap strategy.
+    ///     Writes multiple files atomically using a two-phase temp-then-swap strategy, aborting first if
+    ///     any target changed on disk since the edit read it.
     /// </summary>
     /// <remarks>
-    ///     Phase 1 writes all temp files in parallel — originals are untouched. If any temp
+    ///     Each entry may carry the content the edit was computed against (<c>ExpectedOriginal</c>, null to
+    ///     skip). Before any write, every such entry is compared against the file's current on-disk
+    ///     content — captured here for rollback anyway, so the check costs no extra I/O; a mismatch aborts
+    ///     the whole batch with a <see cref="FileConflictException" /> and touches nothing (the lost-update
+    ///     guard for the verified-write commit paths). <paramref name="toDisplayPath" /> renders the
+    ///     conflicted paths for that message.
+    ///     Phase 1 then writes all temp files in parallel — originals are untouched. If any temp
     ///     write fails, all temps are cleaned up and the exception propagates.
     ///     Phase 2 swaps temps into place sequentially. If any swap fails, already-swapped
     ///     files are restored from their captured original content.
     /// </remarks>
     internal static async Task WriteBatchAtomicAsync(
-        IReadOnlyList<(string FilePath, string Content, Encoding Encoding)> files,
+        IReadOnlyList<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)> files,
+        Func<string, string> toDisplayPath,
         CancellationToken ct)
     {
         if (files.Count == 0)
@@ -51,16 +63,68 @@ internal static class AtomicFileWriter
         }
 
         // Resolve temp paths upfront so cleanup always knows what to delete
-        List<(string FilePath, string Content, Encoding Encoding, string TempPath)> entries = files
-            .Select(f => (f.FilePath, f.Content, f.Encoding, TempPath: GetTempPath(f.FilePath)))
+        List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal, string TempPath)> entries = files
+            .Select(f => (f.FilePath, f.Content, f.Encoding, f.ExpectedOriginal, TempPath: GetTempPath(f.FilePath)))
             .ToList();
 
         // Capture originals as raw bytes before writing anything — minimizes TOCTOU window
         // and avoids encoding assumptions (BOM fidelity preserved on rollback)
         byte[]?[] originals = await Task.WhenAll(entries.Select(async e =>
-            File.Exists(e.FilePath)
-                ? await FileUtility.RunWithIoRetryAsync(() => File.ReadAllBytesAsync(e.FilePath, ct), ct)
-                : null));
+        {
+            if (!File.Exists(e.FilePath))
+            {
+                return null;
+            }
+
+            try
+            {
+                return await FileUtility.RunWithIoRetryAsync(() => File.ReadAllBytesAsync(e.FilePath, ct), ct);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                // The file vanished between the existence check and the read — an external delete racing
+                // this capture. Treat as "missing" (null) rather than letting the raw exception escape as a
+                // crash-class error: the conflict check below then reports it as a clean conflict, symmetric
+                // with the delete-landed-before-capture case.
+                return null;
+            }
+        }));
+
+        // Write-time conflict detection (lost-update guard): verify each file on disk still holds the
+        // content the edit was computed against before touching anything. A mismatch means an external
+        // writer changed the file during the batch's compute window — which for the fork tools can span
+        // minutes — so writing now would silently discard that change. Reuses the originals just read for
+        // rollback (zero extra I/O). Entries with no expected content (a path the edit never read from
+        // disk) are skipped.
+        List<string> conflicts = [];
+        for (var i = 0; i < entries.Count; i++)
+        {
+            string? expected = entries[i].ExpectedOriginal;
+            if (expected is null)
+            {
+                continue;
+            }
+
+            // A file present at read time (expected non-null) but gone now was deleted out-of-band —
+            // writing would resurrect it — and bytes undecodable under the entry's encoding mean an
+            // out-of-band re-encode; both decode to null, which never matches, so both conflict.
+            string? current = originals[i] is { } bytes
+                ? FileUtility.DecodeContentForComparison(bytes, entries[i].Encoding)
+                : null;
+            if (!String.Equals(current, expected, StringComparison.Ordinal))
+            {
+                conflicts.Add(entries[i].FilePath);
+            }
+        }
+
+        if (conflicts.Count > 0)
+        {
+            var list = String.Join("\n", conflicts.Select(p => $"  {toDisplayPath(p)}"));
+            throw new FileConflictException(
+                "Write aborted: the following file(s) changed on disk after the edit was computed, so " +
+                "writing would overwrite those external changes. Nothing was written — re-run the tool to " +
+                $"edit against the current file contents:\n{list}");
+        }
 
         // Phase 1: Write all temp files in parallel — originals untouched
         try
@@ -80,7 +144,7 @@ internal static class AtomicFileWriter
         {
             for (var i = 0; i < entries.Count; i++)
             {
-                (string FilePath, string Content, Encoding Encoding, string TempPath) entry = entries[i];
+                (string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal, string TempPath) entry = entries[i];
                 await FileUtility.RunWithIoRetryAsync(() => File.Move(entry.TempPath, entry.FilePath, true), ct);
                 swappedCount++;
             }

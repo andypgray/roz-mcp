@@ -26,6 +26,16 @@ internal static class IdleTimeoutWatchdog
     private static int s_inFlightCount;
     private static Func<long> s_timestampProvider = Stopwatch.GetTimestamp;
 
+    /// <summary>
+    ///     The number of tool calls currently executing (bumped by <see cref="EnterCall" /> /
+    ///     <see cref="ExitCall" />). Read by <see cref="ServerShutdown" /> so a shutdown can let an
+    ///     in-flight edit batch commit before tearing the process down (N2). Edits still parked on the edit
+    ///     gate have not yet reached <see cref="EnterCall" /> (the serialization gate is the outer request
+    ///     filter, <see cref="Pipeline.GlobalCallToolFilter" /> the inner one), so they are correctly
+    ///     uncounted — nothing is written until they run.
+    /// </summary>
+    internal static int InFlightCount => Volatile.Read(ref s_inFlightCount);
+
     /// <summary>Records the start of a tool call: re-stamps the idle clock and increments the in-flight count.</summary>
     /// <remarks>
     ///     Pair with <see cref="ExitCall" /> in a <c>finally</c>. The in-flight count this bumps keeps a

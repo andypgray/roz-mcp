@@ -36,7 +36,7 @@ public class SolutionChangeWriterTests(WorkspaceFixture fixture)
         (Solution oldSolution, Solution newSolution) = await ForkDocumentAsync(CrlfBody, CrlfBody + "// appended\n", ct);
 
         // Act
-        List<(string FilePath, string Content, Encoding Encoding)> changes =
+        List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)> changes =
             await SolutionChangeWriter.CollectFileChangesAsync(oldSolution, newSolution, ct);
 
         // Assert — the appended LF is normalized to CRLF, leaving no bare line feed.
@@ -51,7 +51,7 @@ public class SolutionChangeWriterTests(WorkspaceFixture fixture)
         (Solution oldSolution, Solution newSolution) = await ForkDocumentAsync(LfBody, LfBody + "// appended\r\n", ct);
 
         // Act
-        List<(string FilePath, string Content, Encoding Encoding)> changes =
+        List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)> changes =
             await SolutionChangeWriter.CollectFileChangesAsync(oldSolution, newSolution, ct);
 
         // Assert — the appended CRLF is normalized down to LF, so no CRLF survives.
@@ -66,7 +66,7 @@ public class SolutionChangeWriterTests(WorkspaceFixture fixture)
         Solution solution = await fixture.WorkspaceManager.GetSolutionAsync(ct);
 
         // Act
-        List<(string FilePath, string Content, Encoding Encoding)> changes =
+        List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)> changes =
             await SolutionChangeWriter.CollectFileChangesAsync(solution, solution, ct);
 
         // Assert

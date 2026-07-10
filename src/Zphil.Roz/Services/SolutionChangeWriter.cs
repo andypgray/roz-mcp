@@ -31,7 +31,7 @@ internal static class SolutionChangeWriter
     ///     physical file. Used by the commit path (<see cref="SaveAsync" />) and by <c>DryRun</c> callers
     ///     that need the same collection but write nothing.
     /// </summary>
-    public static async Task<List<(string FilePath, string Content, Encoding Encoding)>> CollectFileChangesAsync(
+    public static async Task<List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)>> CollectFileChangesAsync(
         Solution oldSolution, Solution newSolution, CancellationToken ct)
     {
         SolutionChanges changes = newSolution.GetChanges(oldSolution);
@@ -41,7 +41,7 @@ internal static class SolutionChangeWriter
             .ToList();
 
         HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
-        List<(string FilePath, string Content, Encoding Encoding)> fileChanges = new();
+        List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)> fileChanges = new();
         foreach (DocumentId docId in changedDocIds)
         {
             Document? newDoc = newSolution.GetDocument(docId);
@@ -61,18 +61,22 @@ internal static class SolutionChangeWriter
                 continue;
             }
 
-            // Key the new text's line endings to the pre-edit document. Every changed doc exists in
-            // both snapshots (GetChangedDocuments), so the null-guard is belt-and-braces.
+            // Key the new text's line endings to the pre-edit document, and carry that pre-edit text as the
+            // write-time conflict baseline (SaveAsync verifies disk still holds it before writing). Every
+            // changed doc exists in both snapshots (GetChangedDocuments), so the null-guard is belt-and-braces;
+            // a null baseline just skips the check for that file.
             var content = newText.ToString();
             Document? oldDoc = oldSolution.GetDocument(docId);
+            string? expectedOriginal = null;
             if (oldDoc is not null)
             {
-                SourceText oldText = await oldDoc.GetTextAsync(ct);
-                content = FileUtility.NormalizeLineEndings(content, oldText.ToString());
+                var oldString = (await oldDoc.GetTextAsync(ct)).ToString();
+                content = FileUtility.NormalizeLineEndings(content, oldString);
+                expectedOriginal = oldString;
             }
 
             Encoding encoding = newText.Encoding ?? FileUtility.Utf8NoBom;
-            fileChanges.Add((newDoc.FilePath, content, encoding));
+            fileChanges.Add((newDoc.FilePath, content, encoding, expectedOriginal));
         }
 
         return fileChanges;
@@ -86,14 +90,15 @@ internal static class SolutionChangeWriter
     public static async Task<List<string>> SaveAsync(
         WorkspaceManager workspaceManager, Solution oldSolution, Solution newSolution, CancellationToken ct)
     {
-        List<(string FilePath, string Content, Encoding Encoding)> fileChanges =
+        List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)> fileChanges =
             await CollectFileChangesAsync(oldSolution, newSolution, ct);
 
-        // Atomic batch write: all files succeed or none are modified.
-        await AtomicFileWriter.WriteBatchAtomicAsync(fileChanges, ct);
+        // Atomic batch write: all files succeed or none are modified — and aborts if any file changed on
+        // disk since the fork was computed (write-time conflict detection).
+        await AtomicFileWriter.WriteBatchAtomicAsync(fileChanges, workspaceManager.GetDisplayPath, ct);
 
         // Notify workspace of all changes after successful write.
-        foreach ((string FilePath, string Content, Encoding Encoding) change in fileChanges)
+        foreach ((string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal) change in fileChanges)
         {
             workspaceManager.ScheduleFileChanged(change.FilePath, change.Content, change.Encoding);
         }

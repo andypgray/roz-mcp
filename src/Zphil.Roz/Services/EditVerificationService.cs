@@ -95,7 +95,7 @@ internal sealed class EditVerificationService(WorkspaceManager workspaceManager)
     {
         if (mode == VerifyMode.DryRun)
         {
-            List<(string FilePath, string Content, Encoding Encoding)> changes =
+            List<(string FilePath, string Content, Encoding Encoding, string? ExpectedOriginal)> changes =
                 await SolutionChangeWriter.CollectFileChangesAsync(baseSolution, fork, ct);
             List<string> docs = changes.Select(c => workspaceManager.GetRelativePath(c.FilePath)).ToList();
             if (changes.Count == 0)

@@ -88,6 +88,44 @@ internal static class FileUtility
     }
 
     /// <summary>
+    ///     Decodes raw file bytes to their content string for the write-time conflict check, using the
+    ///     encoding the batch entry will write with — for a session edit the encoding
+    ///     <see cref="ReadFileWithEncodingAsync" /> detected (always UTF-8; it rejects everything else),
+    ///     for a fork edit the encoding Roslyn loaded the document with, which can be UTF-16 or a legacy
+    ///     codepage. Assuming UTF-8 here would turn every fork write to such a file into a deterministic
+    ///     false conflict. The encoding's own byte-order mark is stripped so the decoded string matches
+    ///     the BOM-free content the "expected" side always carries.
+    /// </summary>
+    /// <returns>
+    ///     The decoded content, or null when the bytes cannot be decoded under
+    ///     <paramref name="encoding" /> (a strict encoding hitting an out-of-band re-encode). The only
+    ///     caller compares the result for equality against the content an edit was computed from, so
+    ///     "cannot decode" must read as a difference (conflict), never surface as an exception.
+    /// </returns>
+    internal static string? DecodeContentForComparison(byte[] bytes, Encoding encoding)
+    {
+        byte[] preamble = encoding.GetPreamble();
+        int offset = preamble.Length > 0 && bytes.AsSpan().StartsWith(preamble) ? preamble.Length : 0;
+
+        // BOM-less UTF-8 entries (codepage 65001) tolerate an on-disk UTF-8 BOM: an external re-save
+        // that only toggles the BOM is not a content conflict, and the expected side is BOM-free.
+        if (offset == 0 && encoding.CodePage == Utf8NoBom.CodePage
+                        && bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        {
+            offset = 3;
+        }
+
+        try
+        {
+            return encoding.GetString(bytes, offset, bytes.Length - offset);
+        }
+        catch (DecoderFallbackException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     ///     Detects a non-UTF-8 byte-order mark and returns its encoding name, or null when none is present.
     ///     UTF-32 patterns are tested before UTF-16 because UTF-32 LE (<c>FF FE 00 00</c>) begins with the
     ///     UTF-16 LE mark (<c>FF FE</c>); the ordering only affects which name is reported — all reject.

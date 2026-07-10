@@ -1,6 +1,8 @@
 # roz-mcp
 
-[![CI](https://github.com/andypgray/roz-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/andypgray/roz-mcp/actions/workflows/ci.yml) [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/andypgray/roz-mcp?label=openssf+scorecard)](https://scorecard.dev/viewer/?uri=github.com/andypgray/roz-mcp)
+<!-- mcp-name: io.github.andypgray/roz-mcp -->
+
+[![CI](https://github.com/andypgray/roz-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/andypgray/roz-mcp/actions/workflows/ci.yml) [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/andypgray/roz-mcp?label=openssf+scorecard)](https://scorecard.dev/viewer/?uri=github.com/andypgray/roz-mcp) [![NuGet](https://img.shields.io/nuget/v/Zphil.Roz?logo=nuget&label=nuget)](https://www.nuget.org/packages/Zphil.Roz) [![NuGet downloads](https://img.shields.io/nuget/dt/Zphil.Roz?label=downloads)](https://www.nuget.org/packages/Zphil.Roz)
 
 roz is an MCP server that gives C# coding agents the compiler's view of a solution. It finds every real reference to a symbol, including the edges text search misses: overrides, interface dispatch, DI registrations. It renames a symbol across the whole solution in one call, previews the blast radius of a proposed change, and makes edits that verify themselves against the compiler in the same round trip. roz runs as a .NET global tool over stdio; one `roz-mcp setup` command configures Claude Code, Cursor, VS Code Copilot Chat, or Codex CLI.
 
@@ -28,6 +30,12 @@ Restart the AI client, then ask it something that needs the compiler:
 | Cursor | `.cursor/mcp.json` | `AGENTS.md` |
 | VS Code Copilot Chat | `.vscode/mcp.json` | `AGENTS.md` |
 | Codex CLI | `.codex/config.toml` | `AGENTS.md` |
+
+VS Code and Cursor users can also add the server in one click, once the tool is installed:
+
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=roz&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22roz-mcp%22%7D) [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=roz&config=eyJjb21tYW5kIjoicm96LW1jcCJ9)
+
+The badges wire the server into the client config only. `roz-mcp setup` is the fuller path: it also writes the project rules snippet and, for Claude Code, the permission defaults that route write tools through a confirmation prompt.
 
 Two defaults are worth knowing before your first session:
 
