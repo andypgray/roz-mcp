@@ -11,6 +11,11 @@ public class SetupCommandTests
 
     private static readonly ClaudePluginDetection NoPluginFound = new(false, null, null);
 
+    private static readonly string ProjectRoot = Path.Combine(Path.GetTempPath(), "roz-setup-proj");
+
+    private static readonly string UserSettingsPath =
+        Path.Combine(Path.GetTempPath(), "roz-someone-home", ".claude", "settings.json");
+
     [Fact]
     public void ResolveClientsFromArg_SingleKey_ReturnsOneConfigurator()
     {
@@ -134,7 +139,7 @@ public class SetupCommandTests
     public void BuildPluginVerdict_PluginFlag_NamesTheFlagAsBasis()
     {
         string verdict = SetupCommand.BuildPluginVerdict(
-            ClaudePluginMode.Plugin, NoPluginFound, true, false, @"C:\proj");
+            ClaudePluginMode.Plugin, NoPluginFound, true, false, ProjectRoot);
 
         verdict.ShouldContain("plugin mode (--plugin)");
         verdict.ShouldContain("Re-run with --no-plugin");
@@ -144,7 +149,7 @@ public class SetupCommandTests
     public void BuildPluginVerdict_NoPluginFlag_NamesTheFlagAsBasis()
     {
         string verdict = SetupCommand.BuildPluginVerdict(
-            ClaudePluginMode.Classic, DetectedPlugin, false, true, @"C:\proj");
+            ClaudePluginMode.Classic, DetectedPlugin, false, true, ProjectRoot);
 
         verdict.ShouldContain("classic mode (--no-plugin)");
         verdict.ShouldContain("Re-run with --plugin");
@@ -153,23 +158,25 @@ public class SetupCommandTests
     [Fact]
     public void BuildPluginVerdict_DetectedEnabled_NamesKeyAndRelativeSourceFile()
     {
-        ClaudePluginDetection detection = new(true, "roz-mcp@roz-mcp", @"C:\proj\.claude\settings.local.json");
+        ClaudePluginDetection detection = new(
+            true, "roz-mcp@roz-mcp", Path.Combine(ProjectRoot, ".claude", "settings.local.json"));
 
         string verdict = SetupCommand.BuildPluginVerdict(
-            ClaudePluginMode.Plugin, detection, false, false, @"C:\proj");
+            ClaudePluginMode.Plugin, detection, false, false, ProjectRoot);
 
-        verdict.ShouldContain(@"'roz-mcp@roz-mcp' enabled in .claude\settings.local.json");
+        verdict.ShouldContain($"'roz-mcp@roz-mcp' enabled in {Path.Combine(".claude", "settings.local.json")}");
     }
 
     [Fact]
     public void BuildPluginVerdict_ExplicitlyDisabled_NamesKeyAsDisabled()
     {
-        ClaudePluginDetection detection = new(false, "roz-mcp@roz-mcp", @"C:\proj\.claude\settings.json");
+        ClaudePluginDetection detection = new(
+            false, "roz-mcp@roz-mcp", Path.Combine(ProjectRoot, ".claude", "settings.json"));
 
         string verdict = SetupCommand.BuildPluginVerdict(
-            ClaudePluginMode.Classic, detection, false, false, @"C:\proj");
+            ClaudePluginMode.Classic, detection, false, false, ProjectRoot);
 
-        verdict.ShouldContain(@"'roz-mcp@roz-mcp' disabled in .claude\settings.json");
+        verdict.ShouldContain($"'roz-mcp@roz-mcp' disabled in {Path.Combine(".claude", "settings.json")}");
     }
 
     [Fact]
@@ -177,19 +184,19 @@ public class SetupCommandTests
     {
         // A user-level settings file lives outside the project root, so the relative form would
         // be a ..\..\ chain; the absolute path is clearer.
-        ClaudePluginDetection detection = new(true, "roz-mcp@roz-mcp", @"C:\Users\someone\.claude\settings.json");
+        ClaudePluginDetection detection = new(true, "roz-mcp@roz-mcp", UserSettingsPath);
 
         string verdict = SetupCommand.BuildPluginVerdict(
-            ClaudePluginMode.Plugin, detection, false, false, @"C:\proj");
+            ClaudePluginMode.Plugin, detection, false, false, ProjectRoot);
 
-        verdict.ShouldContain(@"enabled in C:\Users\someone\.claude\settings.json");
+        verdict.ShouldContain($"enabled in {UserSettingsPath}");
     }
 
     [Fact]
     public void BuildPluginVerdict_NothingFound_SaysSo()
     {
         string verdict = SetupCommand.BuildPluginVerdict(
-            ClaudePluginMode.Classic, NoPluginFound, false, false, @"C:\proj");
+            ClaudePluginMode.Classic, NoPluginFound, false, false, ProjectRoot);
 
         verdict.ShouldContain("no roz-mcp plugin enablement found");
     }

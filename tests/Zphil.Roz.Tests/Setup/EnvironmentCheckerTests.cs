@@ -11,8 +11,9 @@ namespace Zphil.Roz.Tests.Setup;
 /// </summary>
 public class EnvironmentCheckerTests
 {
-    private const string WorkingDirectory = "C:\\repo\\src";
-    private const string ConfigPath = "C:\\repo\\.roz.json";
+    private static readonly string RepoRoot = Path.Combine(Path.GetTempPath(), "roz-checker-repo");
+    private static readonly string WorkingDirectory = Path.Combine(RepoRoot, "src");
+    private static readonly string ConfigPath = Path.Combine(RepoRoot, ".roz.json");
 
     [Fact]
     public void CheckProjectConfig_NoFile_PassesWithOptionalNote()
@@ -58,7 +59,7 @@ public class EnvironmentCheckerTests
 
         // Assert — path is rendered relative to the working directory, like the solution check.
         result.Passed.ShouldBeTrue();
-        result.Detail.ShouldContain("Found: ..\\.roz.json");
+        result.Detail.ShouldContain($"Found: {Path.Combine("..", ".roz.json")}");
         result.Detail.ShouldContain("applied: ROZ_TOOLS, ROZ_LOG_LEVEL");
         result.Detail.ShouldContain("overridden by env: ROZ_SESSION_ID");
     }
@@ -94,7 +95,7 @@ public class EnvironmentCheckerTests
 
         // Assert
         result.Passed.ShouldBeTrue();
-        result.Detail.ShouldContain("Found ..\\.roz.json but ignored");
+        result.Detail.ShouldContain($"Found {Path.Combine("..", ".roz.json")} but ignored");
         result.Detail.ShouldContain("not valid JSON");
     }
 
