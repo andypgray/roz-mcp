@@ -113,8 +113,8 @@ internal static class McpJsonWriter
 
     /// <summary>
     ///     Reads and parses a JSON file with lenient options (comments + trailing commas allowed,
-    ///     BOM stripped). Returns <c>null</c> when the file does not exist or cannot be parsed —
-    ///     the caller decides whether to overwrite or abort.
+    ///     BOM stripped). Returns <c>null</c> when the file does not exist, cannot be parsed, or
+    ///     has a non-object root — the caller decides whether to overwrite or abort.
     /// </summary>
     internal static async Task<JsonObject?> ReadJsonFileAsync(string path, CancellationToken ct = default)
     {
@@ -132,7 +132,9 @@ internal static class McpJsonWriter
 
         try
         {
-            return JsonNode.Parse(content, documentOptions: LenientDocumentOptions)?.AsObject();
+            // `as JsonObject`, not AsObject(): a parseable non-object root (array, string) must
+            // read as "nothing usable here" for every caller, not throw mid-setup.
+            return JsonNode.Parse(content, documentOptions: LenientDocumentOptions) as JsonObject;
         }
         catch (JsonException ex)
         {

@@ -36,17 +36,19 @@ internal sealed record SignatureParameter(
 ///     matched by name (case-sensitive). Drives both the impact classifier and the apply-gate.
 /// </summary>
 /// <remarks>
-///     <see cref="Retyped" /> holds kept-name parameters whose type OR <see cref="RefKind" /> differs;
-///     <see cref="Kept" /> holds the rest. <see cref="IsDeterministicSubset" /> is the gate the apply
-///     tool enforces: add-with-default, remove, and reorder are mechanical; retype and params-shape
-///     changes are analysis-only in v1.
+///     <see cref="Retyped" /> holds kept-name parameters whose type OR <see cref="RefKind" /> differs.
+///     <see cref="NewOrdinalByOldOrdinal" /> maps every name-matched parameter (kept and retyped) from
+///     its old ordinal to its new one — keyed by ordinal, not parameter symbol, because a call site may
+///     bind any member of the slot family (interface member, base virtual) whose parameter symbols
+///     differ from the anchor's while sharing arity and order. <see cref="IsDeterministicSubset" /> is
+///     the gate the apply tool enforces: add-with-default, remove, and reorder are mechanical; retype
+///     and params-shape changes are analysis-only in v1.
 /// </remarks>
 internal sealed record SignatureDelta(
     IReadOnlyList<IParameterSymbol> Removed,
     IReadOnlyList<SignatureParameter> Added,
     IReadOnlyList<(IParameterSymbol Old, SignatureParameter New)> Retyped,
-    IReadOnlyList<(IParameterSymbol Old, SignatureParameter New)> Kept,
-    IReadOnlyList<int> NewOrderOfKept,
+    IReadOnlyDictionary<int, int> NewOrdinalByOldOrdinal,
     bool Reordered,
     bool TouchesParams)
 {

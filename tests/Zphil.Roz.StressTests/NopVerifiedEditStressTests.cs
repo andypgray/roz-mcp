@@ -10,9 +10,8 @@ namespace Zphil.Roz.StressTests;
 
 /// <summary>
 ///     Times the <c>verify</c> delta on nopCommerce: a leaf-project Delta (small cone, expect seconds)
-///     and a Nop.Core DryRun (the whole-solution cone whose number decides whether the
-///     <c>MaxDeltaDependentProjects</c> scope-cap lever gets pulled — see
-///     docs/backlog/verified-writes-followups.md).
+///     and a Nop.Core DryRun (the whole-solution cone whose number decides whether a
+///     <c>MaxDeltaDependentProjects</c> scope cap is worth adding).
 /// </summary>
 [Trait("Category", "Stress")]
 public class NopVerifiedEditStressTests(NopTempWorkspaceFixture fixture, ITestOutputHelper output) : IClassFixture<NopTempWorkspaceFixture>
@@ -87,6 +86,28 @@ public class NopVerifiedEditStressTests(NopTempWorkspaceFixture fixture, ITestOu
         result.ShouldContain("DRY RUN — no files written.");
         result.ShouldContain("Would change signature of 'GetProductByIdAsync'");
         output.WriteLine("change_signature DryRun: " + VerificationLine(result));
+        (await File.ReadAllBytesAsync(productServiceFile, TestContext.Current.CancellationToken)).ShouldBe(before);
+    }
+
+    [Fact]
+    public async Task ChangeSignature_RemoveUsedParameter_RefusesListingBlockers_WritesNothing()
+    {
+        // Arrange — productId is used in GetProductByIdAsync's body and supplied at every call site,
+        // so the apply gate must refuse with concrete per-site blockers and write nothing. Deliberately
+        // the default verify=None: under DryRun the byte-identity assertion would be vacuous (DryRun
+        // never writes), whereas here it pins the refusal gate itself.
+        CodeEditTools codeEdit = CreateEditTools(fixture);
+        string productServiceFile = ProductServiceFile(fixture.WorkspaceManager);
+        byte[] before = await File.ReadAllBytesAsync(productServiceFile, TestContext.Current.CancellationToken);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(300));
+
+        // Act + Assert
+        UserErrorException ex = await Should.ThrowAsync<UserErrorException>(() => codeEdit.ChangeSignature(productServiceFile, "GetProductByIdAsync", "()",
+            "ProductService", ct: cts.Token));
+
+        output.WriteLine(ex.Message[..Math.Min(2000, ex.Message.Length)]);
+        ex.Message.ShouldContain("productId");
         (await File.ReadAllBytesAsync(productServiceFile, TestContext.Current.CancellationToken)).ShouldBe(before);
     }
 

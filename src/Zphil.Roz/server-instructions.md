@@ -16,10 +16,10 @@ Name: `symbolNames=["A","B"]`, exclusive with cursor; scope with `project=`.
 
 Read tools snap to nearest decl. `go_to_definition` on `override` → base.
 
-## Special Symbol Names
-Constructors → `.ctor`/`.cctor`, destructors → `Finalize`,
-operators → `op_Addition` (etc.), indexers → `this[]`.
-Class name targets the class, not its constructor.
+## Guides (MCP resources)
+`roz://guides/editing` before mutating: verify modes, change_signature
+blockers, apply_code_fix equivalenceKey, special names (`.ctor`, `this[]`).
+`roz://guides/configuration`: env vars, `ROZ_TOOLS`, .roz.json.
 
 ## Shared Parameter Values
 - `kind` / `memberKinds`: Class|Interface|Struct|Enum|Delegate|Method|Constructor|Property|Field|Event|Namespace|Indexer|Operator|Destructor

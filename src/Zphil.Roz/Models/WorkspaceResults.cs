@@ -1,3 +1,5 @@
+using Zphil.Roz.Infrastructure;
+
 namespace Zphil.Roz.Models;
 
 internal sealed record WorkspaceInfoResult(
@@ -5,7 +7,8 @@ internal sealed record WorkspaceInfoResult(
     string SolutionPath,
     List<ProjectInfo> Projects,
     int TotalDocs,
-    List<ProjectDependencyInfo> ProjectDependencies);
+    List<ProjectDependencyInfo> ProjectDependencies,
+    ProjectConfigSeedResult? Config = null);
 
 internal sealed record ProjectInfo(
     string Name,

@@ -543,7 +543,7 @@ internal sealed class WorkspaceManager : IAsyncDisposable
                 // opened the solution BEFORE this deletion, so coalescing against it would leave the
                 // deleted document in the snapshot (a stale read). A direct reload re-reads disk and is
                 // the correctness guarantee the entry-time sweep owes its caller. The residual
-                // concurrent-sweep double-reload is a bounded waste, tracked in docs/backlog (N3).
+                // concurrent-sweep double-reload is a known, bounded waste.
                 await ScheduleReloadAsync(ct: ct);
                 return;
             }

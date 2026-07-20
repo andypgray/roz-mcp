@@ -150,7 +150,23 @@ internal static class WorkspaceInfoFormatter
     {
         sb.AppendLine($"Solution: {result.SolutionName}");
         sb.AppendLine($"Path: {result.SolutionPath}");
+        AppendConfigFileLine(sb, result);
         sb.AppendLine();
+    }
+
+    /// <summary>
+    ///     Provenance line for the <c>.roz.json</c> project config: which file was discovered and what
+    ///     it contributed, via the canonical <see cref="Infrastructure.ProjectConfigSeedResult.Summary" />.
+    ///     Omitted entirely when no file was found.
+    /// </summary>
+    private static void AppendConfigFileLine(StringBuilder sb, WorkspaceInfoResult result)
+    {
+        if (result.Config is not { ConfigFilePath: not null } config)
+        {
+            return;
+        }
+
+        sb.AppendLine($"Config file: {config.ConfigFilePath} ({config.Summary()})");
     }
 
     private static void AppendProjectCount(StringBuilder sb, int logicalCount, int totalCount)

@@ -6,6 +6,11 @@ namespace Zphil.Roz.Tests.Setup;
 
 public class SetupCommandTests
 {
+    private static readonly ClaudePluginDetection DetectedPlugin =
+        new(true, "roz-mcp@roz-mcp", ".claude/settings.local.json");
+
+    private static readonly ClaudePluginDetection NoPluginFound = new(false, null, null);
+
     [Fact]
     public void ResolveClientsFromArg_SingleKey_ReturnsOneConfigurator()
     {
@@ -103,5 +108,89 @@ public class SetupCommandTests
         IReadOnlyList<IClientConfigurator> detected = SetupCommand.AutoDetectClients(projectRoot);
 
         detected.Select(c => c.ClientKey).ShouldBe(["claude", "codex"]);
+    }
+
+    [Fact]
+    public void ResolvePluginMode_BothFlags_Throws() =>
+        Should.Throw<UserErrorException>(() => SetupCommand.ResolvePluginMode(true, true, NoPluginFound));
+
+    [Fact]
+    public void ResolvePluginMode_PluginFlag_WinsOverNegativeDetection() =>
+        SetupCommand.ResolvePluginMode(true, false, NoPluginFound).ShouldBe(ClaudePluginMode.Plugin);
+
+    [Fact]
+    public void ResolvePluginMode_NoPluginFlag_WinsOverPositiveDetection() =>
+        SetupCommand.ResolvePluginMode(false, true, DetectedPlugin).ShouldBe(ClaudePluginMode.Classic);
+
+    [Fact]
+    public void ResolvePluginMode_NoFlags_FollowsDetectionPositive() =>
+        SetupCommand.ResolvePluginMode(false, false, DetectedPlugin).ShouldBe(ClaudePluginMode.Plugin);
+
+    [Fact]
+    public void ResolvePluginMode_NoFlags_FollowsDetectionNegative() =>
+        SetupCommand.ResolvePluginMode(false, false, NoPluginFound).ShouldBe(ClaudePluginMode.Classic);
+
+    [Fact]
+    public void BuildPluginVerdict_PluginFlag_NamesTheFlagAsBasis()
+    {
+        string verdict = SetupCommand.BuildPluginVerdict(
+            ClaudePluginMode.Plugin, NoPluginFound, true, false, @"C:\proj");
+
+        verdict.ShouldContain("plugin mode (--plugin)");
+        verdict.ShouldContain("Re-run with --no-plugin");
+    }
+
+    [Fact]
+    public void BuildPluginVerdict_NoPluginFlag_NamesTheFlagAsBasis()
+    {
+        string verdict = SetupCommand.BuildPluginVerdict(
+            ClaudePluginMode.Classic, DetectedPlugin, false, true, @"C:\proj");
+
+        verdict.ShouldContain("classic mode (--no-plugin)");
+        verdict.ShouldContain("Re-run with --plugin");
+    }
+
+    [Fact]
+    public void BuildPluginVerdict_DetectedEnabled_NamesKeyAndRelativeSourceFile()
+    {
+        ClaudePluginDetection detection = new(true, "roz-mcp@roz-mcp", @"C:\proj\.claude\settings.local.json");
+
+        string verdict = SetupCommand.BuildPluginVerdict(
+            ClaudePluginMode.Plugin, detection, false, false, @"C:\proj");
+
+        verdict.ShouldContain(@"'roz-mcp@roz-mcp' enabled in .claude\settings.local.json");
+    }
+
+    [Fact]
+    public void BuildPluginVerdict_ExplicitlyDisabled_NamesKeyAsDisabled()
+    {
+        ClaudePluginDetection detection = new(false, "roz-mcp@roz-mcp", @"C:\proj\.claude\settings.json");
+
+        string verdict = SetupCommand.BuildPluginVerdict(
+            ClaudePluginMode.Classic, detection, false, false, @"C:\proj");
+
+        verdict.ShouldContain(@"'roz-mcp@roz-mcp' disabled in .claude\settings.json");
+    }
+
+    [Fact]
+    public void BuildPluginVerdict_UserScopeSource_KeepsAbsolutePath()
+    {
+        // A user-level settings file lives outside the project root, so the relative form would
+        // be a ..\..\ chain; the absolute path is clearer.
+        ClaudePluginDetection detection = new(true, "roz-mcp@roz-mcp", @"C:\Users\someone\.claude\settings.json");
+
+        string verdict = SetupCommand.BuildPluginVerdict(
+            ClaudePluginMode.Plugin, detection, false, false, @"C:\proj");
+
+        verdict.ShouldContain(@"enabled in C:\Users\someone\.claude\settings.json");
+    }
+
+    [Fact]
+    public void BuildPluginVerdict_NothingFound_SaysSo()
+    {
+        string verdict = SetupCommand.BuildPluginVerdict(
+            ClaudePluginMode.Classic, NoPluginFound, false, false, @"C:\proj");
+
+        verdict.ShouldContain("no roz-mcp plugin enablement found");
     }
 }

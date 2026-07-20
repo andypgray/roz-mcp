@@ -10,6 +10,7 @@ using Zphil.Roz.Enums;
 using Zphil.Roz.Extensions;
 using Zphil.Roz.Infrastructure;
 using Zphil.Roz.Models;
+using Zphil.Roz.Resources;
 using Zphil.Roz.Symbols;
 using Zphil.Roz.Utility;
 using DiagnosticSeverity = Microsoft.CodeAnalysis.DiagnosticSeverity;
@@ -526,7 +527,8 @@ internal sealed class SymbolEditService(WorkspaceManager workspaceManager, Diagn
             throw new UserErrorException(
                 "The matched symbol is a type declaration but the replacement is a constructor. " +
                 "This would replace the entire class/struct with just the constructor. " +
-                "To target a constructor, use symbolName \".ctor\" (instance) or \".cctor\" (static).");
+                "To target a constructor, use symbolName \".ctor\" (instance) or \".cctor\" (static). " +
+                $"Special symbol names are documented in the {RozResources.EditingGuideUri} MCP resource.");
         }
 
         if (newNode is MemberDeclarationSyntax && newNode is not TypeDeclarationSyntax)

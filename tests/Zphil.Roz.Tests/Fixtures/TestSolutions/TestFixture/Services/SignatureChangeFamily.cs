@@ -6,6 +6,11 @@ public interface ISigSurface
     /// <summary>Does the thing.</summary>
     /// <param name="n">A number.</param>
     int Do(int n);
+
+    /// <summary>Trims — <paramref name="unused" /> is dead in every family body (remove-unused scenario).</summary>
+    /// <param name="text">The text.</param>
+    /// <param name="unused">Unused everywhere.</param>
+    int Trim(string text, int unused);
 }
 
 /// <summary>Implements <see cref="ISigSurface" /> — its <c>Do</c> shares the interface slot.</summary>
@@ -14,6 +19,11 @@ public class SigSurfaceImpl : ISigSurface
     /// <summary>Does the thing.</summary>
     /// <param name="n">A number.</param>
     public int Do(int n) => n;
+
+    /// <summary>Trims — <paramref name="unused" /> is dead in every family body (remove-unused scenario).</summary>
+    /// <param name="text">The text.</param>
+    /// <param name="unused">Unused everywhere.</param>
+    public int Trim(string text, int unused) => text.Length;
 }
 
 /// <summary>Virtual base for the override / lockstep-note precise-signature tests.</summary>
@@ -64,6 +74,10 @@ public class SignatureChangeFamilyConsumer
     public int DoViaInterface(ISigSurface s) => s.Do(10);
 
     public int DoViaConcrete(SigSurfaceImpl impl) => impl.Do(20);
+
+    public int TrimViaInterface(ISigSurface s) => s.Trim("abc", 1);
+
+    public int TrimViaConcrete(SigSurfaceImpl impl) => impl.Trim("abcd", 2);
 
     public int CalcViaDerived() => new SigDerived().Calc(5);
 

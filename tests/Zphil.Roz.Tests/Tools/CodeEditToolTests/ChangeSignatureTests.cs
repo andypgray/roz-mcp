@@ -1,4 +1,5 @@
 using Zphil.Roz.Enums;
+using Zphil.Roz.Resources;
 using Zphil.Roz.Tests.Fixtures;
 using Zphil.Roz.Tools;
 using static Zphil.Roz.Tests.Fixtures.TestFileHelper;
@@ -115,6 +116,7 @@ public class ChangeSignatureTests(EditWorkspaceFixture fixture) : EditTestBase(f
         ex.Message.ShouldContain("refused");
         ex.Message.ShouldContain("bind to different parameters");
         ex.Message.ShouldContain("SignatureChangeSurface.cs:");
+        ex.Message.ShouldContain(RozResources.EditingGuideUri);
         // Nothing written — the file is byte-identical.
         (await File.ReadAllBytesAsync(SurfaceFile, TestContext.Current.CancellationToken)).ShouldBe(before);
     }
@@ -215,6 +217,26 @@ public class ChangeSignatureTests(EditWorkspaceFixture fixture) : EditTestBase(f
         string content = await File.ReadAllTextAsync(FamilyFile, TestContext.Current.CancellationToken);
         content.ShouldContain("int Do(int n, int extra = 0)"); // interface declaration
         content.ShouldContain("public int Do(int n, int extra = 0)"); // implementation
+    }
+
+    [Fact]
+    public async Task ChangeSignature_InterfaceFamily_RemoveUnused_RewritesDispatchCallSites()
+    {
+        // Anchored at the CONCRETE implementation while the call sites bind the interface member —
+        // the planner must map the delta by parameter ordinal across the slot family, not by the
+        // anchor's parameter symbol identity (which bogus-blocked every dispatch site as a
+        // params-expanded call — found by the nopCommerce change_signature gate stress test).
+        CodeEditTools tools = CreateEditTools(Fixture);
+
+        await tools.ChangeSignature(
+            FamilyFile, "Trim", "(string text)", "SigSurfaceImpl",
+            ct: TestContext.Current.CancellationToken);
+
+        string content = await File.ReadAllTextAsync(FamilyFile, TestContext.Current.CancellationToken);
+        content.ShouldContain("int Trim(string text);"); // interface declaration
+        content.ShouldContain("public int Trim(string text)"); // implementation
+        content.ShouldContain("s.Trim(\"abc\")"); // interface-dispatch call: arg dropped
+        content.ShouldContain("impl.Trim(\"abcd\")"); // concrete call: arg dropped
     }
 
     [Fact]

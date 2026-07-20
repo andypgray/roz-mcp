@@ -1,4 +1,5 @@
 using Zphil.Roz.Enums;
+using Zphil.Roz.Infrastructure;
 using Zphil.Roz.Models;
 using Zphil.Roz.Presentation;
 
@@ -262,6 +263,97 @@ public class WorkspaceInfoDetailLevelTests
 
         // Assert
         output.ShouldNotContain("Orleans.Project0");
+    }
+
+    // Config file provenance line
+
+    [Fact]
+    public void Full_WithConfigFileAndAppliedKeys_RendersConfigLine()
+    {
+        // Arrange
+        WorkspaceInfoResult result = CreateSmallResult() with
+        {
+            Config = new ProjectConfigSeedResult(
+                "C:\\test\\.roz.json",
+                [new AppliedSetting("ROZ_TOOLS", "read"), new AppliedSetting("ROZ_LOG_LEVEL", "Debug")],
+                [], [])
+        };
+
+        // Act
+        string output = ResponseFormatter.Format(result);
+
+        // Assert
+        output.ShouldContain("Config file: C:\\test\\.roz.json (applied: ROZ_TOOLS, ROZ_LOG_LEVEL)");
+    }
+
+    [Fact]
+    public void Full_WithConfigFileAllOverridden_RendersOverriddenList()
+    {
+        // Arrange — a file was found but every key lost to a live env var.
+        WorkspaceInfoResult result = CreateSmallResult() with
+        {
+            Config = new ProjectConfigSeedResult("C:\\test\\.roz.json", [], ["ROZ_TOOLS"], [])
+        };
+
+        // Act
+        string output = ResponseFormatter.Format(result);
+
+        // Assert
+        output.ShouldContain("Config file: C:\\test\\.roz.json (applied: none; overridden by env: ROZ_TOOLS)");
+    }
+
+    [Fact]
+    public void Full_WithConfigFileAppliedAndWarnings_RendersWarningsClause()
+    {
+        // Arrange — a partially-valid file: one key applied, one skipped with a warning. The line
+        // must surface the warning so an agent sees the skipped key without reading the log.
+        WorkspaceInfoResult result = CreateSmallResult() with
+        {
+            Config = new ProjectConfigSeedResult(
+                "C:\\test\\.roz.json",
+                [new AppliedSetting("ROZ_TOOLS", "read")],
+                [],
+                ["Unknown key 'PATH' skipped — only ROZ_-prefixed variables from the registry are honored."])
+        };
+
+        // Act
+        string output = ResponseFormatter.Format(result);
+
+        // Assert
+        output.ShouldContain("Config file: C:\\test\\.roz.json (applied: ROZ_TOOLS; warnings: Unknown key 'PATH' skipped");
+    }
+
+    [Fact]
+    public void Full_WithConfigFileIgnored_RendersIgnoredNotEnvPrecedence()
+    {
+        // Arrange — an unparseable file: found, nothing applied, nothing overridden, one warning.
+        // The line must say the file was ignored, not imply an environment-precedence outcome.
+        WorkspaceInfoResult result = CreateSmallResult() with
+        {
+            Config = new ProjectConfigSeedResult(
+                "C:\\test\\.roz.json", [], [],
+                [".roz.json is not valid JSON and was ignored: bad token"])
+        };
+
+        // Act
+        string output = ResponseFormatter.Format(result);
+
+        // Assert
+        output.ShouldContain("Config file: C:\\test\\.roz.json (ignored: .roz.json is not valid JSON");
+        output.ShouldNotContain("applied: none");
+    }
+
+    [Fact]
+    public void Full_NoConfigFile_OmitsConfigLine()
+    {
+        // Arrange
+        WorkspaceInfoResult result = CreateSmallResult();
+
+        // Act
+        string output = ResponseFormatter.Format(result);
+
+        // Assert
+        output.ShouldNotContain("Config file:");
     }
 
     // Multi-TFM grouping

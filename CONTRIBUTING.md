@@ -81,8 +81,8 @@ change could affect behavior or performance at scale.
 - Evidence first: changes to tool output, routing text, or default behavior need a
   stated rationale in the PR. A change to the default tool preset needs an A/B run to
   back it (see the harness below). HOLD verdicts are normal here: two of our own tools
-  failed their promotion A/Bs, and one of them (`analyze_method`) is still held out of the
-  default preset because of it.
+  failed their first promotion A/Bs and spent weeks held out of the default preset;
+  both graduated only when later evidence cleared the bar.
 
 ### Running the A/B harness
 

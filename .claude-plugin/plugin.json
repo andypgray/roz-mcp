@@ -1,0 +1,16 @@
+{
+  "name": "roz-mcp",
+  "description": "Roslyn-powered semantic C# navigation, impact analysis, and verified editing for coding agents: the compiler's view of a .NET solution, over MCP.",
+  "version": "1.1.0",
+  "author": { "name": "Andrew Gray" },
+  "homepage": "https://github.com/andypgray/roz-mcp",
+  "repository": "https://github.com/andypgray/roz-mcp",
+  "license": "MIT",
+  "keywords": ["roslyn", "csharp", "dotnet", "refactoring", "rename", "code-analysis", "code-navigation", "mcp"],
+  "mcpServers": {
+    "roz": {
+      "command": "dotnet",
+      "args": ["dnx", "Zphil.Roz", "--source", "https://api.nuget.org/v3/index.json"]
+    }
+  }
+}

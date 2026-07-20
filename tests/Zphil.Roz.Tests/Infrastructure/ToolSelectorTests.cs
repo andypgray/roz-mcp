@@ -2,6 +2,7 @@ using System.Reflection;
 using ModelContextProtocol.Server;
 using Zphil.Roz.Infrastructure;
 using Zphil.Roz.Pipeline;
+using Zphil.Roz.Resources;
 
 namespace Zphil.Roz.Tests.Infrastructure;
 
@@ -9,9 +10,10 @@ public class ToolSelectorTests : IDisposable
 {
     private const int TotalToolCount = 19;
 
-    // 19 total − 7 risky − 1 held (analyze_method; pending A/B validation) = 11.
-    // analyze_change_impact was promoted to default 2026-06-16 (backs the impact/tighten prompts).
-    private const int DefaultPresetToolCount = 11;
+    // 19 total − 7 risky = 12; the pending-validation hold list is empty.
+    // analyze_change_impact was promoted to default 2026-06-16 (backs the impact/tighten prompts);
+    // analyze_method was promoted 2026-07-20 (routed A/B: adoption + turn/cost win + recall parity).
+    private const int DefaultPresetToolCount = 12;
 
     private static readonly string[] RiskyTools =
         ["edit_symbol", "replace_content", "apply_code_fix", "change_signature", "add_usings", "remove_unused_usings", "get_unused_references"];
@@ -204,8 +206,9 @@ public class ToolSelectorTests : IDisposable
         Environment.SetEnvironmentVariable(RozEnvVars.Tools.Name, "bogus,alsobogus");
 
         // Act / Assert
-        Should.Throw<InvalidOperationException>(() => ToolSelector.GetEnabledTools())
-            .Message.ShouldContain(RozEnvVars.Tools.Name);
+        string message = Should.Throw<InvalidOperationException>(() => ToolSelector.GetEnabledTools()).Message;
+        message.ShouldContain(RozEnvVars.Tools.Name);
+        message.ShouldContain(RozResources.ConfigurationGuideUri);
     }
 
     [Fact]
@@ -365,24 +368,25 @@ public class ToolSelectorTests : IDisposable
     }
 
     [Fact]
-    public void GetEnabledTools_AnalyzeMethod_HeldOutOfDefaultButPresentInAll()
+    public void GetEnabledTools_AnalyzeMethod_PromotedIntoDefaultPreset()
     {
-        // Arrange — analyze_method is held out of `default` pending A/B validation (not risky).
+        // Arrange — analyze_method was promoted to `default` 2026-07-20 (routed A/B: adoption,
+        // −19% cost / −27% turns, judged recall parity-or-better; superseding the 2026-06 HOLD).
         Environment.SetEnvironmentVariable(RozEnvVars.Tools.Name, "all");
         HashSet<string> all = GetToolNames(ToolSelector.GetEnabledTools());
 
         Environment.SetEnvironmentVariable(RozEnvVars.Tools.Name, "default");
         HashSet<string> def = GetToolNames(ToolSelector.GetEnabledTools());
 
-        // Assert — reachable via all, withheld from default.
+        // Assert — now present in both presets.
         all.ShouldContain("analyze_method");
-        def.ShouldNotContain("analyze_method");
+        def.ShouldContain("analyze_method");
     }
 
     [Fact]
-    public void GetEnabledTools_DefaultPlusAnalyzeMethod_OptsHeldToolBackIn()
+    public void GetEnabledTools_DefaultPlusAnalyzeMethod_IsIdempotent()
     {
-        // Arrange — explicit opt-in re-adds the held tool on top of the default preset.
+        // Arrange — the pre-promotion opt-in spelling must keep working and not double-register.
         Environment.SetEnvironmentVariable(RozEnvVars.Tools.Name, "default,analyze_method");
 
         // Act
@@ -390,7 +394,7 @@ public class ToolSelectorTests : IDisposable
 
         // Assert
         names.ShouldContain("analyze_method");
-        names.Count.ShouldBe(DefaultPresetToolCount + 1);
+        names.Count.ShouldBe(DefaultPresetToolCount);
     }
 
     [Fact]

@@ -13,13 +13,15 @@ internal static class EnvironmentChecker
     /// <summary>
     ///     Runs all environment checks and returns the results.
     /// </summary>
-    public static async Task<List<CheckResult>> RunAllChecksAsync(string workingDirectory)
+    public static async Task<List<CheckResult>> RunAllChecksAsync(
+        string workingDirectory, ProjectConfigSeedResult configSeed)
     {
         List<CheckResult> results =
         [
             await CheckDotNetSdkAsync(),
             CheckMSBuild(),
-            CheckSolutionFile(workingDirectory)
+            CheckSolutionFile(workingDirectory),
+            CheckProjectConfig(workingDirectory, configSeed)
         ];
 
         return results;
@@ -126,6 +128,36 @@ internal static class EnvironmentChecker
         {
             return new CheckResult(false, "MSBuild", $"Error querying MSBuild: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    ///     Reports what the optional <c>.roz.json</c> seeding pass did.
+    /// </summary>
+    /// <remarks>
+    ///     Always passes: the file is optional and an unparseable one is ignored with a warning, so
+    ///     it must never block setup.
+    /// </remarks>
+    internal static CheckResult CheckProjectConfig(string workingDirectory, ProjectConfigSeedResult configSeed)
+    {
+        const string checkName = "Project Config";
+
+        if (configSeed.ConfigFilePath is null)
+        {
+            // No file — or the seeding pass itself failed, in which case the warning says so.
+            string detail = configSeed.Warnings.Count > 0
+                ? configSeed.Warnings[0]
+                : $"none found (optional {ProjectConfigSeeder.FileName})";
+            return new CheckResult(true, checkName, detail);
+        }
+
+        string relPath = Path.GetRelativePath(workingDirectory, configSeed.ConfigFilePath);
+
+        if (configSeed.IsIgnored)
+        {
+            return new CheckResult(true, checkName, $"Found {relPath} but {configSeed.Summary()}");
+        }
+
+        return new CheckResult(true, checkName, $"Found: {relPath} ({configSeed.Summary()})");
     }
 
     private static CheckResult CheckSolutionFile(string workingDirectory)

@@ -147,14 +147,15 @@ internal static class PromptFragments
         string specific = String.IsNullOrWhiteSpace(notInDefault)
             ? ""
             : $"This recipe's core tool `{notInDefault}` is NOT in the `default` preset, so if it isn't "
-              + $"registered, enabling it means `ROZ_TOOLS=default,{notInDefault}` (then reconnect the server). ";
+              + $"registered, enabling it means `ROZ_TOOLS=default,{notInDefault}` (env block or the "
+              + "project's `.roz.json`; then reconnect the server). ";
 
         return
             "**Preflight — tools.** This recipe drives the roz-mcp server's tools, and a server launched "
             + "with a restricted `ROZ_TOOLS` subset may not register every one it needs. " + specific
             + "If a tool a step calls comes back unknown/unavailable, don't thrash — name the missing tool "
             + "and either use the fallback that step gives, or, if it has none, tell me to enable it (add it "
-            + "to `ROZ_TOOLS` and reconnect the server, or run `roz-mcp setup --tools=…`) and pause "
-            + "until I do.";
+            + "to `ROZ_TOOLS` — in the client env block or the project's `.roz.json` — and reconnect the "
+            + "server, or run `roz-mcp setup --tools=…`) and pause until I do.";
     }
 }

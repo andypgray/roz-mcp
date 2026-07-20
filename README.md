@@ -22,7 +22,7 @@ Restart the AI client, then ask it something that needs the compiler:
 
 > *"Find all implementations of `IRepository` in this solution and show me each class's `Save` method."*
 
-`setup` auto-detects which AI clients the project uses (via the `.claude/`, `.cursor/`, `.vscode/`, and `.codex/` marker directories), writes the matching MCP config file(s), and appends a short usage snippet to the corresponding project rules file. If several markers are present, choose explicitly with `--client=claude,cursor`. Setup is idempotent: re-running it updates roz's entries without disturbing sibling MCP servers or user-added environment variables.
+`setup` auto-detects which AI clients the project uses (via the `.claude/`, `.cursor/`, `.vscode/`, and `.codex/` marker directories), writes the matching MCP config file(s), and appends a short usage snippet to the corresponding project rules file. If several markers are present, choose explicitly with `--client=claude,cursor`. Setup is idempotent: re-running it updates roz's entries without disturbing sibling MCP servers or user-added environment variables, and it refreshes the `# roz-mcp` rules section in place without touching the rest of the file.
 
 | Client | Config file(s) written | Rules file |
 |---|---|---|
@@ -40,7 +40,7 @@ The badges wire the server into the client config only. `roz-mcp setup` is the f
 Two defaults are worth knowing before your first session:
 
 - **Solution discovery** walks up from the working directory; pin a specific `.sln`/`.slnx` with `ROZ_SOLUTION_PATH` in the MCP config's `env` block.
-- **Tool surface**: the default set is 11 of the 19 tools; most write tools are opt-in. Seed a different surface at onboarding with `roz-mcp setup --tools=all` (everything) or `--tools=read` (read-only), and see [Configuration](#configuration) for finer control.
+- **Tool surface**: the default set is 12 of the 19 tools; most write tools are opt-in. Seed a different surface at onboarding with `roz-mcp setup --tools=all` (everything) or `--tools=read` (read-only), and see [Configuration](#configuration) for finer control.
 
 ### From source
 
@@ -52,6 +52,30 @@ dotnet tool install -g --add-source src/Zphil.Roz/bin/Release Zphil.Roz
 ```
 
 roz installs as `roz-mcp` on your `PATH`.
+
+## Install as a Claude Code plugin
+
+Claude Code users can skip the global tool install: this repository doubles as a single-plugin marketplace, and one install delivers the server with its [tools](#tools), [prompts](#prompts), and [guide resources](#resources), plus a skill carrying the usage rules that `roz-mcp setup` would otherwise write into `CLAUDE.md`:
+
+```
+/plugin marketplace add andypgray/roz-mcp
+/plugin install roz-mcp@roz-mcp
+```
+
+The plugin starts the server with `dotnet dnx`, which fetches `Zphil.Roz` from nuget.org on first use. You still need the .NET 10 SDK. The plugin's launch command is global, so per-project settings go in a `.roz.json` file (see [Configuration](#configuration)); the bundled skill includes a recommended permission block that keeps the write tools behind a confirmation prompt ([SKILL.md](https://github.com/andypgray/roz-mcp/blob/main/skills/roz-csharp-editing/SKILL.md)).
+
+Enable the plugin per project rather than globally: roz is measured overhead on work that never needs the compiler's view (see [When it helps](#when-it-helps-and-when-it-doesnt)). A team can check the marketplace and plugin enablement into the project's `.claude/settings.json`, which prompts teammates to install on their next session:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "roz-mcp": { "source": { "source": "github", "repo": "andypgray/roz-mcp" } }
+  },
+  "enabledPlugins": { "roz-mcp@roz-mcp": true }
+}
+```
+
+The server should be registered once per project. With the plugin enabled, `roz-mcp setup` detects it and configures around it: permission rules under the plugin's tool-name prefix, `--tools` written to `.roz.json`, no `.mcp.json` entry, and a warning if a leftover classic entry would register the server twice. `--plugin` and `--no-plugin` force either mode.
 
 ## Tools
 
@@ -65,7 +89,7 @@ Read tools accept `includeDocs=true` and (where applicable) `includeBody=true`; 
 | `get_symbols_overview` | navigation | List a type's members. |
 | `go_to_definition` | navigation | Resolve a cursor to its definition. |
 | `find_overloads` | navigation | List all overloads of a method (batchable by name or location). |
-| `analyze_method` | navigation | Method signature plus inbound callers and outbound in-solution callees grouped by target (held out of the default set). |
+| `analyze_method` | navigation | Method signature plus inbound callers and outbound in-solution callees grouped by target. |
 | `find_references` | references | Find usages with `referenceKinds=all\|invocations\|reads\|writes`, plus `contextLines`, base-call filtering, and a DI-registration fallback for constructors. |
 | `find_implementations` | references | Interface/abstract members → overrides; classes/interfaces → derived/implementing types. |
 | `analyze_change_impact` | references | Blast radius of a proposed change (`TypeChange`/`RemoveSymbol`/`AccessibilityNarrow`/`SignatureChange`); each site tagged compatible/requires-update/unsafe; `newSignature` upgrades `SignatureChange` to per-argument classification via overload resolution. |
@@ -81,7 +105,7 @@ Read tools accept `includeDocs=true` and (where applicable) `includeBody=true`; 
 | `add_usings` | usings | Add `using` directives, sorted and deduplicated. |
 | `remove_unused_usings` | usings | Remove unused `using` directives. |
 
-The default set is 11 tools. The write tools (`edit_symbol`, `replace_content`, `apply_code_fix`, `change_signature`, `add_usings`, `remove_unused_usings`) and `get_unused_references` are opt-in via `ROZ_TOOLS`, and `analyze_method` is held out pending A/B validation (see [Configuration](#configuration)).
+The default set is 12 tools. The write tools (`edit_symbol`, `replace_content`, `apply_code_fix`, `change_signature`, `add_usings`, `remove_unused_usings`) and `get_unused_references` are opt-in via `ROZ_TOOLS` (see [Configuration](#configuration)).
 
 The five `editing` tools accept a `verify` mode that collapses the edit → build → re-read loop into one round trip: `verify=DryRun` applies the batch to an in-memory fork and reports the new-and-resolved compiler-error delta without writing anything, and `verify=Delta` commits first, then reports. Verified writes exist because an agent's own success report is not evidence: silently asserting completion while the state says otherwise is a pattern reported across the agent literature ([Advani 2026](https://arxiv.org/abs/2606.09863), agentic benchmarks rather than code audits specifically).
 
@@ -89,7 +113,7 @@ Batched read tools (`find_references`, `analyze_change_impact`, `find_implementa
 
 ## Prompts
 
-roz registers 10 user-invoked slash commands (`/mcp__roz__*`). Each packages a multi-step Roslyn workflow into one recipe.
+roz registers 10 user-invoked slash commands (`/mcp__roz__<name>` in a direct Claude Code install; plugin installs prefix the name differently). Each packages a multi-step Roslyn workflow into one recipe.
 
 | Prompt | Purpose |
 |---|---|
@@ -103,6 +127,16 @@ roz registers 10 user-invoked slash commands (`/mcp__roz__*`). Each packages a m
 | `assess_upgrade` | Gauge how risky a NuGet upgrade is: how exposed your code is and which call sites the breaking changes would hit. |
 | `triage_coverage` | Run coverage and triage each gap: dead code, a genuine missing test, or a likely false alarm. |
 | `triage_complexity` | Rank the worst complexity hotspots in a scope, then route each to the right fix. |
+
+## Resources
+
+roz exposes three reference guides as MCP resources, so the detail loads on demand rather than in every session. Claude Code can `@`-mention a resource to attach it, and recent builds let the model list and read resources itself.
+
+| Resource | Carries | Read when |
+|---|---|---|
+| `roz://guides/configuration` | Env vars, the `ROZ_TOOLS` grammar, config troubleshooting. | Changing config, or a tool is missing. |
+| `roz://guides/editing` | `verify` modes, `change_signature` gate, `apply_code_fix` keys, special symbol names. | Before a mutating call. |
+| `roz://guides/workflows` | Question → tool routing map, the ten workflow prompts. | Choosing a tool, or a request matches a workflow. |
 
 ## When it helps (and when it doesn't)
 
@@ -122,7 +156,7 @@ Pick the tool surface for the work (`ROZ_TOOLS`):
 |---|---|---|
 | Rename / mechanical refactor | `default` | `rename_symbol`; try `verify=DryRun` first |
 | Dead-code removal / API tightening | `all` (or `default,editing`) | `cleanup_dead_code`, `tighten_accessibility` prompts |
-| Audit / understand a codebase | `default` | at the budget tier, add depth with `default,analyze_method` |
+| Audit / understand a codebase | `default` | `analyze_method` covers per-method depth out of the box |
 | Greenfield / pattern-following feature work | *don't load roz* (measured cost, no benefit) | or `read` at most |
 | Diagnostics cleanup loop | `edit` | `fix_diagnostics` prompt |
 | API-change planning | `default` | `assess_impact`, `check_breaking_changes` prompts |
@@ -150,7 +184,11 @@ All configuration is via environment variables, typically set in the MCP client'
 | `ROZ_TEST_PATHS` | Semicolon-separated path prefixes that classify projects as tests (for `includeTests` filtering). |
 | `ROZ_TEST_NAMESPACES` | Semicolon-separated namespace prefixes that classify projects as tests. |
 
-`roz-mcp setup --tools=<value>` seeds `ROZ_TOOLS` into the generated MCP config so subsequent sessions pick it up automatically.
+The same variables can live in a `.roz.json` file at the project root, keyed by the exact variable names (`{"ROZ_TOOLS": "read"}`). At startup roz uses the nearest file up the directory tree and applies any key the environment leaves unset; an environment variable always wins. The file keeps per-project settings working when the launch command is configured globally and carries no per-project `env` block.
+
+`roz-mcp setup --tools=<value>` seeds `ROZ_TOOLS` into the generated MCP config's `env` block so subsequent sessions pick it up automatically.
+
+The table lists the most common variables; the full reference for every variable roz reads, including the `.roz.json` rules, is the `roz://guides/configuration` resource (see [Resources](#resources)).
 
 ## Works well with
 
@@ -182,7 +220,7 @@ roz was stress-tested against seven open-source C# codebases before 1.0.0, and e
 
 ## Contributing
 
-Contributions are welcome. Bug reports reproduced on public codebases, new conservative executors, client-compatibility fixes, and evaluation or harness improvements land best. See [CONTRIBUTING.md](https://github.com/andypgray/roz-mcp/blob/main/CONTRIBUTING.md) for dev setup (.NET 10 SDK, Windows or Linux) and the test architecture. Default-preset changes want an A/B run, and HOLD verdicts are normal here (two of our own tools have them). The deep dive on internals (error-handling conventions, location/FQN resolution, DI-container detection, verified writes, and precision limits) is in [ARCHITECTURE.md](https://github.com/andypgray/roz-mcp/blob/main/ARCHITECTURE.md). To report a security issue privately, see [SECURITY.md](https://github.com/andypgray/roz-mcp/blob/main/SECURITY.md).
+Contributions are welcome. Bug reports reproduced on public codebases, new conservative executors, client-compatibility fixes, and evaluation or harness improvements land best. See [CONTRIBUTING.md](https://github.com/andypgray/roz-mcp/blob/main/CONTRIBUTING.md) for dev setup (.NET 10 SDK, Windows or Linux) and the test architecture. Default-preset changes want an A/B run, and HOLD verdicts are normal here (two of our own tools have them). The deep dive on internals (error-handling conventions, location/FQN resolution, DI-container detection, verified writes, and precision limits) is in [ARCHITECTURE.md](https://github.com/andypgray/roz-mcp/blob/main/ARCHITECTURE.md). To report a security issue privately, see [SECURITY.md](https://github.com/andypgray/roz-mcp/blob/main/SECURITY.md). roz collects nothing and processes everything locally; [PRIVACY.md](https://github.com/andypgray/roz-mcp/blob/main/PRIVACY.md) states that as policy.
 
 ## License
 

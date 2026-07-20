@@ -836,6 +836,29 @@ def _print_progress(rubric: str, task: str, arm: str, rep: int, record: dict) ->
     print(f"  judged {task} | {arm} | rep {rep}: {headline}", flush=True)
 
 
+async def _judge_with_retry(
+    rubric: str, task: str, arm: str, rep: int, reference: str, candidate: str, model: str
+) -> dict:
+    """Dispatch one judgment; retry once when the reply parses as no JSON."""
+    for attempt in (1, 2):
+        try:
+            return await _dispatch_judge(rubric, task, reference, candidate, model)
+        except (ValueError, json.JSONDecodeError) as exc:
+            # A truncated reply (paragraph-length `notes` overrunning the output cap) parses
+            # as no JSON; one fresh call almost always repairs it (both 2026-07-02 incidents
+            # did). A second failure records the null-scored judgment exactly as before.
+            if attempt == 2:
+                return _unparseable_judgment(rubric, exc)
+            print(f"  retry {task} | {arm} | rep {rep}: unparseable judge reply", flush=True)
+        except Exception as exc:
+            # A query/transport failure (e.g. the CLI exits non-zero) must not abort the
+            # whole judge run and lose the judgments already written. Record a null-scored
+            # judgment carrying the captured reason, print it, continue.
+            print(f"  ERROR judging {task} | {arm} | rep {rep}: {exc}", flush=True)
+            return _unparseable_judgment(rubric, exc)
+    raise AssertionError("unreachable: attempt 2 always returns")
+
+
 async def run_judge(timestamp_dir: Path, model: str = JUDGE_MODEL) -> Path:
     """Judge every judged-task run (all four rubrics); write judgments + summary."""
     # Exclude our own *.judgment.json (they share the *.json glob and carry a
@@ -874,18 +897,9 @@ async def run_judge(timestamp_dir: Path, model: str = JUDGE_MODEL) -> Path:
             present = False
         else:
             present = True
-            try:
-                judgment = await _dispatch_judge(
-                    graded.rubric, task, references[graded.reference], candidate, model
-                )
-            except (ValueError, json.JSONDecodeError) as exc:
-                judgment = _unparseable_judgment(graded.rubric, exc)
-            except Exception as exc:
-                # A query/transport failure (e.g. the CLI exits non-zero) must not abort
-                # the whole judge run and lose the judgments already written. Record a
-                # null-scored judgment carrying the captured reason, print it, continue.
-                print(f"  ERROR judging {task} | {arm} | rep {rep}: {exc}", flush=True)
-                judgment = _unparseable_judgment(graded.rubric, exc)
+            judgment = await _judge_with_retry(
+                graded.rubric, task, arm, rep, references[graded.reference], candidate, model
+            )
 
         record = {
             "task": task,

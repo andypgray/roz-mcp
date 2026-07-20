@@ -31,9 +31,9 @@ public class ProgressiveRendererTests
         {
             callLog.Add(level);
             return level == DetailLevel.Full
-                ? new string('x', 200)
+                ? new string('x', 1000)
                 : new string('y', 50);
-        }, 100);
+        }, 400);
 
         // Assert
         result.ShouldContain("--- DETAIL REDUCED ---");
@@ -41,6 +41,7 @@ public class ProgressiveRendererTests
         result.ShouldContain("Source bodies removed");
         callLog.ShouldContain(DetailLevel.Full);
         callLog.ShouldContain(DetailLevel.High);
+        result.Length.ShouldBeLessThanOrEqualTo(400);
     }
 
     [Fact]
@@ -49,13 +50,14 @@ public class ProgressiveRendererTests
         // Arrange — Full, DropBodies, DropDocs all too large, SignaturesOnly fits
         string result = ProgressiveRenderer.Render("input", (_, level) =>
                 level < DetailLevel.Low
-                    ? new string('x', 200)
+                    ? new string('x', 1000)
                     : new string('y', 50),
-            100);
+            400);
 
         // Assert
         result.ShouldContain("Low");
         result.ShouldContain("Only signatures and locations shown");
+        result.Length.ShouldBeLessThanOrEqualTo(400);
     }
 
     [Fact]
@@ -76,17 +78,18 @@ public class ProgressiveRendererTests
     {
         // Arrange — Full and DropBodies produce same output (no bodies requested),
         // DropDocs also same, SignaturesOnly is smaller and fits
-        var largeOutput = new string('x', 200);
+        var largeOutput = new string('x', 1000);
         var smallOutput = new string('y', 50);
 
         string result = ProgressiveRenderer.Render("input", (_, level) =>
                 level >= DetailLevel.Low ? smallOutput : largeOutput,
-            100);
+            400);
 
         // Assert — should report SignaturesOnly, not DropBodies or DropDocs
         result.ShouldContain("Low");
         result.ShouldNotContain("High");
         result.ShouldNotContain("Medium");
+        result.Length.ShouldBeLessThanOrEqualTo(400);
     }
 
     [Fact]
@@ -134,12 +137,13 @@ public class ProgressiveRendererTests
         // Arrange
         string result = ProgressiveRenderer.Render("input", (_, level) =>
                 level == DetailLevel.Full
-                    ? new string('x', 200)
+                    ? new string('x', 1000)
                     : new string('y', 50),
-            100);
+            400);
 
         // Assert
-        result.ShouldContain("100 character limit");
+        result.ShouldContain("400 character limit");
+        result.Length.ShouldBeLessThanOrEqualTo(400);
     }
 
     [Fact]
@@ -164,5 +168,24 @@ public class ProgressiveRendererTests
         result.ShouldContain("Minimal");
         result.ShouldContain(new string('N', 20));
         result.ShouldNotContain(new string('F', 20));
+    }
+
+    [Fact]
+    public void Render_OutputFitsButNoteWouldNot_FallsToNextLevel()
+    {
+        // High's raw output (190) fits the 200-char budget on its own, but not once the ~150-char
+        // reduction note is appended; Medium (20) fits including its note. Returning High would hand
+        // ResponseTruncator an over-budget string — the mid-response chop this renderer exists to
+        // prevent. The load-bearing invariant is result.Length <= maxChars.
+        string result = ProgressiveRenderer.Render("input", (_, level) => level switch
+        {
+            DetailLevel.Full => new string('F', 500),
+            DetailLevel.High => new string('H', 190),
+            _ => new string('M', 20)
+        }, 200);
+
+        result.Length.ShouldBeLessThanOrEqualTo(200);
+        result.ShouldNotContain(new string('H', 190));
+        result.ShouldContain("Medium");
     }
 }

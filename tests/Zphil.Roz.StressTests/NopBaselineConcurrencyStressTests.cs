@@ -19,8 +19,7 @@ public class NopBaselineConcurrencyStressTests(NopTempWorkspaceFixture fixture, 
     // Iteration counts deliberately kept modest. Each nopCommerce baseline capture is a full
     // ~34-project diagnostic pass and each ReloadAsync re-opens all 34 projects (~54s apiece),
     // so the original 30–50 counts pushed a single test to ~27 min of CPU thrash. These still
-    // exercise each race several times; reducing the per-reload/-capture cost is the real lever —
-    // see docs/backlog/nop-stress-reload-cost.md.
+    // exercise each race several times; reducing the per-reload/-capture cost is the real lever.
     private const int RaceIterations = 8; // was 50
     private const int ReloadIterations = 5; // was 30
     private const int EditIterations = 8; // was 20

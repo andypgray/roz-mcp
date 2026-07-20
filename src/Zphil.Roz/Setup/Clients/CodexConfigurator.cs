@@ -16,10 +16,10 @@ internal sealed class CodexConfigurator : IClientConfigurator
     public string ClientKey => "codex";
     public string DisplayName => "Codex CLI";
 
-    public async Task ConfigureAsync(string projectRoot, string? toolsValue, CancellationToken ct = default)
+    public async Task ConfigureAsync(ClientSetupRequest request, CancellationToken ct = default)
     {
-        await ConfigureConfigTomlAsync(projectRoot, toolsValue, ct);
-        await ProjectInstructionsConfigurator.AppendSnippetAsync(projectRoot, RulesFileName, ct);
+        await ConfigureConfigTomlAsync(request.ProjectRoot, request.ToolsValue, ct);
+        await ProjectInstructionsConfigurator.WriteSnippetAsync(request.ProjectRoot, RulesFileName, ct);
     }
 
     public void PrintPostInstallHints(TimeSpan coldLoadTime)

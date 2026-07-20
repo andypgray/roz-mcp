@@ -279,8 +279,7 @@ internal static class FileUtility
         string cwd = workingDirectory ?? Directory.GetCurrentDirectory();
         (string dir, string[] files)? firstAmbiguous = null;
 
-        string? current = cwd;
-        while (current is not null)
+        foreach (string current in EnumerateSelfAndAncestors(cwd))
         {
             string[] slnFiles = FindSlnFiles(current);
             if (slnFiles.Length == 1)
@@ -292,8 +291,6 @@ internal static class FileUtility
             {
                 firstAmbiguous = (current, slnFiles);
             }
-
-            current = Directory.GetParent(current)?.FullName;
         }
 
         if (firstAmbiguous is { } ambiguous)
@@ -307,6 +304,20 @@ internal static class FileUtility
         throw new UserErrorException(
             $"No .sln, .slnf or .slnx file found in '{cwd}' or any parent directory.\n" +
             $"Set {RozEnvVars.SolutionPath.Name} environment variable or run 'roz-mcp setup' in your project directory.");
+    }
+
+    /// <summary>
+    ///     Enumerates <paramref name="directory" /> and then each of its ancestors up to the
+    ///     filesystem root.
+    /// </summary>
+    internal static IEnumerable<string> EnumerateSelfAndAncestors(string directory)
+    {
+        string? current = directory;
+        while (current is not null)
+        {
+            yield return current;
+            current = Directory.GetParent(current)?.FullName;
+        }
     }
 
     private static string[] FindSlnFiles(string directory)

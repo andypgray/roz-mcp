@@ -49,11 +49,18 @@ internal static class ProgressiveRenderer
                 continue;
             }
 
-            if (output.Length <= maxChars)
+            // Build the candidate WITH its reduction note before the fit-check. A rendering that fits
+            // only without its ~150-char note would be pushed back over maxChars once the note is
+            // appended, handing ResponseTruncator exactly the misleading mid-response chop this renderer
+            // exists to prevent. DetailLevel.Full carries no note, so its no-reduction path stays
+            // byte-identical.
+            string candidate = level == DetailLevel.Full
+                ? output
+                : AppendReductionNote(output, level, maxChars);
+
+            if (candidate.Length <= maxChars)
             {
-                return level == DetailLevel.Full
-                    ? output
-                    : AppendReductionNote(output, level, maxChars);
+                return candidate;
             }
 
             previousOutput = output;

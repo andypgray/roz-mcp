@@ -93,13 +93,13 @@ internal static class SignatureDeltaComputer
             }
         }
 
-        List<int> newOrderOfKept = kept.OrderBy(k => k.Old.Ordinal).Select(k => k.New.Ordinal).ToList();
+        Dictionary<int, int> newOrdinalByOldOrdinal = matched.ToDictionary(m => m.OldOrdinal, m => m.NewOrdinal);
 
         bool anyParams = oldParameters.Any(p => p.IsParams) || newParameters.Any(p => p.IsParams);
         bool nonEmptyDelta = removed.Count > 0 || added.Count > 0 || retyped.Count > 0 || reordered;
         bool touchesParams = anyParams && nonEmptyDelta;
 
-        return new SignatureDelta(removed, added, retyped, kept, newOrderOfKept, reordered, touchesParams);
+        return new SignatureDelta(removed, added, retyped, newOrdinalByOldOrdinal, reordered, touchesParams);
     }
 
     /// <summary>

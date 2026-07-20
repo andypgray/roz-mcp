@@ -16,10 +16,11 @@ internal interface IClientConfigurator
 
     /// <summary>
     ///     Writes this client's MCP server entry and project-instructions snippet under
-    ///     <paramref name="projectRoot" />. <paramref name="toolsValue" /> is the parsed value of
-    ///     <c>--tools=</c> and flows into <c>ROZ_TOOLS</c> on the server's env block.
+    ///     <see cref="ClientSetupRequest.ProjectRoot" />. <see cref="ClientSetupRequest.ToolsValue" />
+    ///     is the parsed value of <c>--tools=</c> and flows into <c>ROZ_TOOLS</c> on the server's
+    ///     env block (or, for Claude Code in plugin mode, into <c>.roz.json</c>).
     /// </summary>
-    public Task ConfigureAsync(string projectRoot, string? toolsValue, CancellationToken ct = default);
+    public Task ConfigureAsync(ClientSetupRequest request, CancellationToken ct = default);
 
     /// <summary>
     ///     Prints any post-install guidance specific to this client. Called after the workspace

@@ -1,3 +1,4 @@
+using Zphil.Roz.Resources;
 using Zphil.Roz.Services;
 
 namespace Zphil.Roz.Tests.Services;
@@ -50,6 +51,7 @@ public class ApplyCodeFixEquivalenceKeyTests
         ex.Message.ShouldContain("multiple fixes");
         ex.Message.ShouldContain("key_readonly");
         ex.Message.ShouldContain("key_suppress");
+        ex.Message.ShouldContain(RozResources.EditingGuideUri);
     }
 
     [Fact]
@@ -88,6 +90,7 @@ public class ApplyCodeFixEquivalenceKeyTests
         // Act / Assert
         UserErrorException ex = Should.Throw<UserErrorException>(() => CodeFixService.ResolveEquivalenceKey(actions, Id, null));
         ex.Message.ShouldContain("cannot disambiguate");
+        ex.Message.ShouldContain(RozResources.EditingGuideUri);
     }
 
     [Fact]

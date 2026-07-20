@@ -8,6 +8,7 @@ using Zphil.Roz.Enums;
 using Zphil.Roz.Extensions;
 using Zphil.Roz.Infrastructure;
 using Zphil.Roz.Models;
+using Zphil.Roz.Resources;
 using Zphil.Roz.Symbols;
 
 namespace Zphil.Roz.Services;
@@ -542,7 +543,7 @@ internal sealed class ChangeSignatureService(
             + "safely and automatically. Nothing was written. Blockers:\n" + list
             + "\nchange_signature applies only when every site is safe (add-with-default, remove-unused, "
             + "reorder-with-named-args). Use analyze_change_impact newSignature to see the full classification, "
-            + "then edit by hand.");
+            + $"then edit by hand. The apply-gate rules are documented in the {RozResources.EditingGuideUri} MCP resource.");
     }
 
     private static ChangeSignatureResult Skipped(

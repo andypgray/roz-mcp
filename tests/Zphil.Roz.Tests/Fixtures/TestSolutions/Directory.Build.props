@@ -1,0 +1,12 @@
+<Project>
+
+    <!-- Intentionally empty: shields every fixture project below this directory from the repo-root
+         Directory.Build.props (MSBuild imports only the nearest Directory.Build.props). The root
+         file turns on NuGet lock files (RestorePackagesWithLockFile, and RestoreLockedMode in CI);
+         inherited by fixtures, that would fail the test-startup fixture restore in CI (no committed
+         fixture lock files) and litter fixture dirs with generated packages.lock.json locally.
+         This file sits at the TestSolutions level so the Fixtures/TestSolutions/** content glob
+         copies it into the test output tree, where FixtureRestorer actually runs the restores,
+         shielding the output-tree fixture copies the same way. Do not delete. -->
+
+</Project>

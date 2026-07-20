@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Serilog;
 using Zphil.Roz.Infrastructure;
 using Zphil.Roz.Pipeline;
 using Zphil.Roz.Services;
@@ -18,14 +19,28 @@ Option<string?> clientOption = new("--client")
 {
     Description = "Client(s) to configure: claude, cursor, vscode, codex, or 'all'. Comma-separate for multiple."
 };
+Option<bool> pluginOption = new("--plugin")
+{
+    Description = "Force plugin-mode Claude Code setup (the roz-mcp plugin provides the server: no .mcp.json entry, plugin-prefixed permission rules)."
+};
+Option<bool> noPluginOption = new("--no-plugin")
+{
+    Description = "Force classic Claude Code setup (.mcp.json entry) even when the roz-mcp plugin appears enabled."
+};
 
 Command setupCommand = new(SetupCommandName, "Configure roz-mcp for a project (Claude Code, Cursor, VS Code Copilot Chat, or Codex CLI).")
 {
     toolsOption,
-    clientOption
+    clientOption,
+    pluginOption,
+    noPluginOption
 };
 setupCommand.SetAction((parseResult, _) =>
-    SetupCommand.RunAsync(parseResult.GetValue(toolsOption), parseResult.GetValue(clientOption)));
+    SetupCommand.RunAsync(
+        parseResult.GetValue(toolsOption),
+        parseResult.GetValue(clientOption),
+        parseResult.GetValue(pluginOption),
+        parseResult.GetValue(noPluginOption)));
 
 RootCommand rootCommand = new("Roslyn-powered MCP server for C# semantic code navigation and editing.")
 {
@@ -53,13 +68,42 @@ static Task RunRootAsync(ParseResult parseResult, string[] args)
 [MethodImpl(MethodImplOptions.NoInlining)]
 static async Task StartMcpServerAsync(string[] args)
 {
+    // Step 0, before logger init: ROZ_LOG_LEVEL / ROZ_SESSION_ID seeded from .roz.json must be
+    // in the environment when InitializeFileLogger reads them. The seeder itself never logs.
+    ProjectConfigSeeder.Seed();
     SerilogConfiguration.InitializeFileLogger();
     SerilogConfiguration.RegisterCrashHandlers();
+    LogProjectConfigSeed();
     ParentProcessWatcher.Start();
     IdleTimeoutWatchdog.Start();
 
     MsBuildBootstrap.Initialize();
     await RunServerAsync(args);
+}
+
+// The seeder runs before Serilog exists, so its outcome is logged here, right after logger init.
+static void LogProjectConfigSeed()
+{
+    ProjectConfigSeedResult? seed = ProjectConfigSeeder.Current;
+    if (seed is null)
+    {
+        return;
+    }
+
+    if (seed.ConfigFilePath is not null)
+    {
+        // includeWarnings: false — the loop below logs each warning at Warning level (the only
+        // visible signal under the default ROZ_LOG_LEVEL); repeating them here would double-log.
+        // ReSharper disable ArgumentsStyleLiteral — keep the bool args self-documenting.
+        Log.Information("Project config {ConfigFilePath}: {Summary}",
+            seed.ConfigFilePath, seed.Summary(withValues: true, includeWarnings: false));
+        // ReSharper restore ArgumentsStyleLiteral
+    }
+
+    foreach (string warning in seed.Warnings)
+    {
+        Log.Warning("Project config: {ConfigWarning}", warning);
+    }
 }
 
 [MethodImpl(MethodImplOptions.NoInlining)]
@@ -97,6 +141,7 @@ static async Task RunServerAsync(string[] args)
         .WithStdioServerTransport()
         .WithTrimmedTools(ToolSelector.GetEnabledTools())
         .WithPromptsFromAssembly()
+        .WithResourcesFromAssembly()
         .WithEditSerializationFilter()
         .WithGlobalCallToolFilter();
 

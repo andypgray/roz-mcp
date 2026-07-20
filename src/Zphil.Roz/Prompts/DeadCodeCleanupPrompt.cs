@@ -5,8 +5,8 @@ using ModelContextProtocol.Server;
 namespace Zphil.Roz.Prompts;
 
 /// <summary>
-///     MCP prompts — user-invoked slash commands (<c>/mcp__roz__*</c>) that package a
-///     multi-step Roslyn workflow into one recipe. Unlike tools, a prompt is invoked by the
+///     MCP prompts — user-invoked slash commands (name prefix set by the client and install
+///     kind) that package a multi-step Roslyn workflow into one recipe. Unlike tools, a prompt is invoked by the
 ///     user, not the model; its value is shipping a canned, semantically-aware workflow to
 ///     every consumer of the published tool. The returned string becomes a single user-role
 ///     message that the agent then executes against the server's tools.

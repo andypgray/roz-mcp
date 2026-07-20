@@ -66,6 +66,7 @@ See [Request pipeline and error handling](#request-pipeline-and-error-handling).
 | `src/Zphil.Roz/Symbols/` | Location parsing (`LocationParser`), fully-qualified-name parsing, and special-member resolution. |
 | `src/Zphil.Roz/Prompts/` | `[McpServerPromptType]` classes, the user-invoked workflow recipes (see [Prompts](#prompts)). |
 | `src/Zphil.Roz/Setup/` | The `roz-mcp setup` onboarding flow and its per-client writers. |
+| `src/Zphil.Roz/Resources/` | `RozResources` and the embedded markdown guides served as `roz://guides/*` MCP resources (see [On-demand guide resources](#on-demand-guide-resources)). |
 
 The pipeline stays thin: tools format, services compute, models hold the shape of a result. A tool
 method contains no Roslyn logic of its own: it calls one service, hands the record to
@@ -236,27 +237,27 @@ Recognized tokens that net to an empty set (exclusion-only input) start the serv
 log a warning, so it does not look like a silent startup failure. Full resolution rules live in
 [`ToolSelector.cs`](src/Zphil.Roz/Pipeline/ToolSelector.cs).
 
-When `ROZ_TOOLS` is unset, the **`default` preset** applies. It registers 11 tools: the
-read-only tools minus `get_unused_references` and `analyze_method`, plus `rename_symbol`. It
-excludes eight tools:
+When `ROZ_TOOLS` is unset, the **`default` preset** applies. It registers 12 tools: the
+read-only tools minus `get_unused_references`, plus `rename_symbol`. It excludes seven tools:
 
 - the destructive write tools `edit_symbol`, `replace_content`, `apply_code_fix`,
   `change_signature`, `add_usings`, and `remove_unused_usings`;
-- the niche `get_unused_references`;
-- and `analyze_method`, which is held back for a different reason (below).
+- and the niche `get_unused_references`.
 
 The excluded set is defined by two arrays in `ToolSelector`: `RiskyToolsExcludedFromDefault` (the
-seven destructive/niche tools) and `HeldFromDefaultPendingValidation` (`analyze_method`). `rename_symbol`
-is in neither list: it is the one mutating tool the default preset ships, because in a client that
-follows the setup routing it is still gated behind a write-confirmation prompt.
+seven destructive/niche tools) and `HeldFromDefaultPendingValidation` — an A/B gate for tools that
+are not risky, just unproven: a tool lands there until an evaluation confirms it earns its context
+cost. `rename_symbol` is in neither list: it is the one mutating tool the default preset ships,
+because in a client that follows the setup routing it is still gated behind a write-confirmation
+prompt.
 
-The second list is not about risk: `analyze_method` stays out of the default preset until an A/B
-arm confirms it earns its context cost, and removing its entry from
-`HeldFromDefaultPendingValidation` is the one-line "promote to default" follow-up.
-`analyze_change_impact` went through the same holding pattern and was promoted into the default
-preset to back the `assess_impact` and `tighten_accessibility` prompts: its user-invoked value
-superseded the earlier A/B hold. The two evaluations that drove these decisions are published under
-evidence:
+The hold list is currently empty; both tools that passed through it graduated on evidence.
+`analyze_change_impact` was promoted to back the `assess_impact` and `tighten_accessibility`
+prompts: its user-invoked value superseded the earlier A/B hold. `analyze_method` was held by its
+2026-06 A/B (a bare tool addition was not adopted) and promoted on 2026-07-20 after a routed
+re-test: with a routing cue in place the arm adopted the tool, cut cost 19% and turns 27%, and
+judged method-report recall came out parity-or-better (see the addendum in the evidence doc). The
+evaluations that drove these decisions are published under evidence:
 
 - [`docs/evidence/ab-test-analyze-change-impact-2026-06-01.md`](docs/evidence/ab-test-analyze-change-impact-2026-06-01.md)
 - [`docs/evidence/ab-test-analyze-method-2026-06-04.md`](docs/evidence/ab-test-analyze-method-2026-06-04.md)
@@ -608,6 +609,12 @@ the server mitigates rather than hides it: every reference- or diagnostics-based
 `PromptFragments.RazorBlindSpot`. When
 in doubt, trust a real `dotnet build` over the workspace's view of markup.
 
+### On-demand guide resources
+
+The server also registers three MCP resources (`roz://guides/configuration`, `roz://guides/editing`, and `roz://guides/workflows`) via `WithResourcesFromAssembly()`, immediately after the prompts. Each is an `internal static` method on `RozResources` that returns an embedded markdown guide (`Resources/*.md`) as its body. No URI carries a `{param}`, so all three are advertised as direct resources in `resources/list`, and the model (or the user, by `@`-mention) can read them on demand.
+
+The split keeps the always-loaded surfaces small. `server-instructions.md` stays within its byte budget by signposting the configuration and editing URIs instead of carrying their content. The project-instructions snippet that setup writes does the same for the workflows guide, pointing at it instead of carrying a routing table and prompts catalog inline. The guides hold the detail an agent needs only occasionally: every environment variable and the `ROZ_TOOLS` grammar (configuration); the `verify` modes, `change_signature` apply gate, `apply_code_fix` equivalence keys, and special symbol names (editing); the question → tool routing map and the packaged workflow prompts (workflows). Four write-path error messages point at the relevant guide by URI, so a refusal names where its rules live.
+
 ## Workspace and build internals
 
 ### `WorkspaceManager`
@@ -664,8 +671,8 @@ The project must also exclude MSBuild runtime assemblies from the package. The c
 
 ### Setup and onboarding
 
-`roz-mcp setup [--client=<list>] [--tools=<value>]` configures a project to use the server. Four MCP
-clients are supported, each via its own writer under `Setup/Clients/`:
+`roz-mcp setup [--client=<list>] [--tools=<value>] [--plugin|--no-plugin]` configures a project to
+use the server. Four MCP clients are supported, each via its own writer under `Setup/Clients/`:
 
 - **Claude Code**: `.mcp.json`, `.claude/settings.local.json`, and a project-instructions snippet.
 - **Cursor**: `.cursor/mcp.json` and an `AGENTS.md` snippet.
@@ -676,14 +683,35 @@ clients are supported, each via its own writer under `Setup/Clients/`:
 A zero-argument invocation auto-detects the client from `.claude/`, `.cursor/`, `.vscode/`, or
 `.codex/` marker directories; multiple markers prompt for an explicit `--client=`. The JSON and TOML
 writers share idempotent merge logic that preserves sibling MCP servers and any user-added `env`
-entries. A generic project-instructions snippet is appended to each client's rules file.
+entries. A generic project-instructions snippet is written to each client's rules file: created when
+the file is missing, appended when the `# roz-mcp` section is absent, and replaced in place when the
+section is already there, so a re-run picks up snippet changes from newer releases. Hand edits inside
+the section do not survive a re-run; content outside it is preserved byte-exactly.
 
 For Claude Code specifically, the settings file auto-allows the read-only tools and routes the
 mutating tools to the client's permission-prompt list, so that writes prompt for confirmation. This
 aligns the client's permission layer with the server's conservative-writes design. (The snippet the
-setup flow appends lives in the user's own project rules file, such as their `CLAUDE.md` or
+setup flow writes lives in the user's own project rules file, such as their `CLAUDE.md` or
 `AGENTS.md`, which is a user-owned target distinct from this server's source.) The other clients use
 their own per-tool approval models, so no allow/ask list is emitted for them.
+
+Claude Code also has a plugin path that replaces the server-registration half of `setup`. The
+repository doubles as a single-plugin marketplace (`.claude-plugin/marketplace.json` plus
+`.claude-plugin/plugin.json`), and the plugin launches the server with `dotnet dnx Zphil.Roz` pinned
+to nuget.org, so nothing is installed by hand. The plugin manifest carries no `env` block;
+per-project configuration comes from [`.roz.json`](#project-config-file-rozjson), which exists for
+exactly this globally-configured-launcher case. The plugin also ships a skill
+(`skills/roz-csharp-editing/SKILL.md`) carrying the same breakage-prevention rules the snippet
+delivers (a plugin cannot write a project's rules file, so an on-demand skill is the delivery
+vehicle), plus a recommended permission block using the plugin-prefixed tool names.
+
+The server should be registered once: by the plugin or by a project `.mcp.json` entry, not both.
+`setup` is plugin-aware. It scans the project's and user's Claude Code settings for a
+`roz-mcp@<marketplace>` entry under `enabledPlugins` (nearest scope decides) and states its
+verdict. In plugin mode it writes no `.mcp.json` entry, emits the permission rules under the
+plugin's tool-name prefix, and puts `--tools` into `.roz.json` instead of an `env` block. A
+leftover classic entry that would double-register the server draws a warning; nothing is deleted.
+The `--plugin`/`--no-plugin` flags force either mode when the detection is wrong for the project.
 
 ### Test-project classification
 
@@ -712,7 +740,7 @@ the table below is an index.
 
 | Name | Default | Purpose |
 |---|---|---|
-| `ROZ_TOOLS` | `default` preset (11 tools) | Tool-subset selection; see [Selective tool loading](#selective-tool-loading-roz_tools). |
+| `ROZ_TOOLS` | `default` preset (12 tools) | Tool-subset selection; see [Selective tool loading](#selective-tool-loading-roz_tools). |
 | `ROZ_SOLUTION_PATH` | unset (CWD walk) | Explicit `.sln`/`.slnx`/`.slnf` path; bypasses discovery. |
 | `ROZ_VS_INSTALL_PATH` | unset (`vswhere` auto-selects) | Force a Visual Studio install root for MSBuild registration. |
 | `ROZ_LOG_LEVEL` | `Warning` | Minimum Serilog level for the file sink. |
@@ -726,6 +754,28 @@ the table below is an index.
 | `ROZ_TEST_NAMESPACES` | empty | Comma/semicolon namespace-prefix overrides for test-project detection. |
 | `ROZ_MAX_RESPONSE_CHARS` | `25,000` | Hard response-character cap before truncation. |
 | `MAX_MCP_OUTPUT_TOKENS` | set by the MCP client | Fallback char cap (× 2.5) when `ROZ_MAX_RESPONSE_CHARS` is unset; the one registry entry without a `ROZ_` prefix. |
+
+### Project config file (`.roz.json`)
+
+The same variables can be set per project in an optional `.roz.json` file, keyed by the exact
+`ROZ_*` names. `Infrastructure/ProjectConfigSeeder.cs` runs as step 0 of server startup (before the
+logger initializes, so `ROZ_LOG_LEVEL` and `ROZ_SESSION_ID` from the file take effect) and of
+`roz-mcp setup`. It walks up from the working directory, takes the first directory containing the
+file (a nested project commits `{}` to shield itself from a parent's config), and seeds each
+recognized key into the process environment only when the corresponding variable is unset or blank.
+An environment variable always wins.
+
+The file exists for launchers whose command is configured globally rather than per project, such as
+a Claude Code plugin: a global launch command carries no per-project `env` block, and the file fills
+that gap for every client.
+
+The seedable keys are the `ROZ_`-prefixed subset of the registry, derived programmatically, so a
+committed file cannot inject arbitrary environment (`PATH`, `DOTNET_*`, …); unknown keys are skipped
+with a warning. Parsing is lenient (comments and trailing commas allowed) and failure-tolerant: an
+unparseable file is ignored with a warning and never blocks startup. The seeder runs before Serilog
+exists and while stdout is reserved for the MCP protocol, so it never writes to either; its outcome
+is logged after logger init, shown in `get_workspace_info`'s `Config file:` line, and reported by
+setup's environment checks. A relative `ROZ_SOLUTION_PATH` resolves against the file's directory.
 
 ## Operational notes
 

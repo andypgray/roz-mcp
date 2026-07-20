@@ -1,6 +1,7 @@
 using System.Reflection;
 using ModelContextProtocol.Server;
 using Zphil.Roz.Infrastructure;
+using Zphil.Roz.Resources;
 using Zphil.Roz.Tools;
 
 namespace Zphil.Roz.Pipeline;
@@ -73,13 +74,14 @@ internal static class ToolSelector
     private static readonly string[] RiskyToolsExcludedFromDefault =
         ["edit_symbol", "replace_content", "apply_code_fix", "change_signature", "add_usings", "remove_unused_usings", "get_unused_references"];
 
-    // Not risky — just unvalidated. Held out of the default preset until the A/B arm confirms the
-    // turn-count win; still reachable via all/read/navigate/navigation or by explicit name. Removing
-    // an entry here is the one-line "promote to default" follow-up. See ARCHITECTURE.md Selective Tool Loading.
-    // analyze_change_impact was promoted to default 2026-06-16 to back the assess_impact /
-    // tighten_accessibility prompts (user-invoked value), superseding its A/B HOLD; analyze_method stays held.
-    private static readonly string[] HeldFromDefaultPendingValidation =
-        ["analyze_method"];
+    // Not risky — just unvalidated: tools land here until an A/B arm confirms they earn their
+    // context cost; still reachable via all/read/navigate/navigation or by explicit name while held.
+    // See ARCHITECTURE.md Selective Tool Loading. Currently empty — both graduates are in default:
+    // analyze_change_impact promoted 2026-06-16 (assess_impact / tighten_accessibility user-invoked
+    // value superseded its A/B HOLD); analyze_method promoted 2026-07-20 (routed arm: adoption,
+    // −19% cost / −27% turns, judged recall parity-or-better — see the 2026-07-20 addendum in
+    // docs/evidence/ab-test-analyze-method-2026-06-04.md).
+    private static readonly string[] HeldFromDefaultPendingValidation = [];
 
     private static readonly IReadOnlyDictionary<string, string[]> Presets = BuildPresets();
 
@@ -142,7 +144,8 @@ internal static class ToolSelector
         if (!anyRecognised)
         {
             throw new InvalidOperationException(
-                $"{RozEnvVars.Tools.Name}='{rawValue}' resolved to zero valid tool tokens. Valid values: {FormatValidKeys()}.");
+                $"{RozEnvVars.Tools.Name}='{rawValue}' resolved to zero valid tool tokens. Valid values: {FormatValidKeys()}. "
+                + $"Fix {RozEnvVars.Tools.Name} and reconnect; the {RozResources.ConfigurationGuideUri} MCP resource documents the selection grammar.");
         }
 
         if (enabled.Count == 0)
@@ -184,7 +187,8 @@ internal static class ToolSelector
             return true;
         }
 
-        error = $"{RozEnvVars.Tools.Name}='{value}' contains no valid tool tokens. Valid values: {FormatValidKeys()}.";
+        error = $"{RozEnvVars.Tools.Name}='{value}' contains no valid tool tokens. Valid values: {FormatValidKeys()}. "
+                + $"The {RozResources.ConfigurationGuideUri} MCP resource documents the selection grammar.";
         return false;
     }
 

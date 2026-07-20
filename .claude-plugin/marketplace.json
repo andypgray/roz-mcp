@@ -1,0 +1,12 @@
+{
+  "name": "roz-mcp",
+  "description": "Single-plugin marketplace for roz-mcp: Roslyn-powered semantic C# tools for coding agents, over MCP.",
+  "owner": { "name": "Andrew Gray" },
+  "plugins": [
+    {
+      "name": "roz-mcp",
+      "source": "./",
+      "description": "Roslyn-powered semantic C# navigation, impact analysis, and verified editing for coding agents: the compiler's view of a .NET solution, over MCP."
+    }
+  ]
+}

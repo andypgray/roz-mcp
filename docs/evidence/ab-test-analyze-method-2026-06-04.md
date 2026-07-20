@@ -243,3 +243,34 @@ Raw data (gitignored) under `scripts/ab-test/results/`: pilot `20260602T160906Z`
 - **Run-to-run adoption variance:** R adoption on task 05 was 3/3 in the pilot but 2/4 in the scale batch (combined 5/7) — single-rep adoption is not deterministic.
 - **Task 11 routing gap** is unresolved by design (chasing it risks trap over-reach); it is reported as a known limitation, not a failure.
 - **One symbol/scenario per task.** A different method might shift the secondary-task results.
+
+## Routed re-test (2026-07-19, judged 2026-07-20): PROMOTE — adoption + cost/turn win + recall parity
+
+One-window grid banked before a quota reset: task 05 only, `arm-a-default` (n=4) vs `arm-am-routed`
+(n=4), shuffled run order, zero errors, all builds green (`results/20260719T210126Z`, gitignored;
+headline numbers reproduced here).
+
+Mechanical (routed vs default): cost **−19.1%** ($0.967 vs $1.195), wall −21.3% (249.5 s vs
+316.9 s), turns **−26.9%** (12.2 vs 16.8), tool calls −28.6%, cache read −34.0%. Wilcoxon p=0.375
+on cost at n=4 — direction consistent (three of four routed reps ran 8–10 turns vs the default
+arm's 12–20) but underpowered alone; merge with this doc's June cells for power.
+
+Adoption held this time: 5 `analyze_method` calls pooled across the routed arm's tool-call
+histogram, with `Read` collapsing 23 → 7 — the routing cue did what the June bare-add arm could not.
+
+Judged (opus-4-7 judge, task-05 oracle, one judgment per rep; the judge's parse-retry fix landed
+first as `38ed151` and fired once, rescuing a default-arm reply that would previously have
+null-scored):
+
+| Arm | n | Inbound recall | Outbound recall | Σ hallucinated callees |
+|-----|---|----------------|-----------------|------------------------|
+| `arm-a-default` | 4 | 0.958 | 0.958 | 0 |
+| `arm-am-routed` | 4 | **1.000** | **0.967** | 0 |
+
+Verdict: the June HOLD's two failure modes — non-adoption, and no turn-win with a correctness pass
+— are both cleared by the routed arm on the flagship task. **`analyze_method` was promoted into the
+`default` preset on 2026-07-20** (`HeldFromDefaultPendingValidation` emptied), with the routing cue
+shipped in the `roz://guides/workflows` routing map that the setup snippet points at. Caveats: one
+task, n=4 per arm, single-judge scoring. Scale-correctness is separately pinned by
+`NopAnalyzeMethodStressTests` (nopCommerce: god-method, interface dispatch, batch, external-call
+promotion).

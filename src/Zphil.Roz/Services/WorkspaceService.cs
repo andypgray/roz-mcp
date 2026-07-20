@@ -70,7 +70,9 @@ internal sealed class WorkspaceService(WorkspaceManager workspaceManager)
             }
         }
 
-        return new WorkspaceInfoResult(solutionName, solutionPath, projectInfos, totalDocs, projectDependencies);
+        return new WorkspaceInfoResult(
+            solutionName, solutionPath, projectInfos, totalDocs, projectDependencies,
+            ProjectConfigSeeder.Current);
     }
 
     /// <summary>

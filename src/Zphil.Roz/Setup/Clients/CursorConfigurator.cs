@@ -12,10 +12,10 @@ internal sealed class CursorConfigurator : IClientConfigurator
     public string ClientKey => "cursor";
     public string DisplayName => "Cursor";
 
-    public async Task ConfigureAsync(string projectRoot, string? toolsValue, CancellationToken ct = default)
+    public async Task ConfigureAsync(ClientSetupRequest request, CancellationToken ct = default)
     {
-        await ConfigureMcpJsonAsync(projectRoot, toolsValue, ct);
-        await ProjectInstructionsConfigurator.AppendSnippetAsync(projectRoot, RulesFileName, ct);
+        await ConfigureMcpJsonAsync(request.ProjectRoot, request.ToolsValue, ct);
+        await ProjectInstructionsConfigurator.WriteSnippetAsync(request.ProjectRoot, RulesFileName, ct);
     }
 
     public void PrintPostInstallHints(TimeSpan coldLoadTime) { }

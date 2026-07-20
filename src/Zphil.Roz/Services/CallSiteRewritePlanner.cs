@@ -82,19 +82,7 @@ internal static class CallSiteRewritePlanner
             argToOld[argument] = positional;
         }
 
-        // New ordinal of each kept old parameter, keyed by old symbol.
-        Dictionary<IParameterSymbol, int> newOrdinalOfOld = new(SymbolEqualityComparer.Default);
-        foreach ((IParameterSymbol old, SignatureParameter @new) in delta.Kept)
-        {
-            newOrdinalOfOld[old] = @new.Ordinal;
-        }
-
-        foreach ((IParameterSymbol old, SignatureParameter @new) in delta.Retyped)
-        {
-            newOrdinalOfOld[old] = @new.Ordinal;
-        }
-
-        HashSet<IParameterSymbol> removed = new(delta.Removed, SymbolEqualityComparer.Default);
+        HashSet<int> removedOrdinals = delta.Removed.Select(p => p.Ordinal).ToHashSet();
 
         // Walk the arguments in original order; drop removed, name from the first divergence onward.
         // Divergence = a positional argument that would bind the wrong new parameter, or any named
@@ -107,16 +95,20 @@ internal static class CallSiteRewritePlanner
         foreach (ArgumentSyntax argument in arguments)
         {
             IParameterSymbol old = argToOld[argument];
-            if (removed.Contains(old))
+            if (removedOrdinals.Contains(old.Ordinal))
             {
                 dropped.Add(argument);
                 continue;
             }
 
-            if (!newOrdinalOfOld.TryGetValue(old, out int newOrdinal))
+            if (!delta.NewOrdinalByOldOrdinal.TryGetValue(old.Ordinal, out int newOrdinal))
             {
-                // Should not happen: a non-removed old parameter must be kept or retyped.
-                return Blocked(RewriteBlocker.ExpandedParamsForm);
+                // A non-removed old parameter must be kept or retyped; a miss means the delta and the
+                // site's bound member disagree about the slot layout — an internal invariant break,
+                // never a user-fixable call shape. Fail loudly instead of mislabeling the site with a
+                // params blocker the user would fruitlessly hunt for.
+                throw new InvalidOperationException(
+                    $"Parameter '{old.Name}' (ordinal {old.Ordinal}) is neither kept, retyped, nor removed in the signature delta.");
             }
 
             if (!mustName && argument.NameColon is null && newOrdinal == positionalCount)
@@ -137,19 +129,20 @@ internal static class CallSiteRewritePlanner
 
     private static bool TouchesParameter(SignatureDelta delta, IParameterSymbol parameter)
     {
-        if (delta.Removed.Any(r => SymbolEqualityComparer.Default.Equals(r, parameter)))
+        // Ordinal comparison, not symbol identity: `parameter` belongs to the site's bound member,
+        // the delta's lists to the anchor member — different symbols, same slot layout.
+        if (delta.Removed.Any(r => r.Ordinal == parameter.Ordinal))
         {
             return true;
         }
 
-        if (delta.Retyped.Any(t => SymbolEqualityComparer.Default.Equals(t.Old, parameter)))
+        if (delta.Retyped.Any(t => t.Old.Ordinal == parameter.Ordinal))
         {
             return true;
         }
 
-        (IParameterSymbol Old, SignatureParameter New) kept =
-            delta.Kept.FirstOrDefault(k => SymbolEqualityComparer.Default.Equals(k.Old, parameter));
-        return kept.Old is not null && kept.New.Ordinal != kept.Old.Ordinal;
+        return delta.NewOrdinalByOldOrdinal.TryGetValue(parameter.Ordinal, out int newOrdinal)
+               && newOrdinal != parameter.Ordinal;
     }
 
     private static ArgumentSyntax NameArgument(ArgumentSyntax argument, string paramName)

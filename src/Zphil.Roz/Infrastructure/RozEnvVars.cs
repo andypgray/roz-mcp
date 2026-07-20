@@ -69,7 +69,7 @@ internal static class RozEnvVars
     {
         public const string Name = "ROZ_TOOLS";
 
-        public const string DefaultDescription = "default preset (11 tools; excludes the risky write tools and unvalidated analyze_method)";
+        public const string DefaultDescription = "default preset (12 tools; excludes the risky write tools)";
         // No Read() — Pipeline/ToolSelector.GetEnabledTools resolves preset/category/tool tokens.
     }
 

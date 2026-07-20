@@ -5,3 +5,10 @@ tests/Zphil.Roz.Tests/Fixtures/TestSolutions/TestFixture/Services/Cp1252Sample.c
 
 # Shell scripts: always LF, even on Windows checkouts (Git Bash cannot run CRLF scripts).
 *.sh text eol=lf
+
+# Embedded-resource markdown: these bytes ship inside the tool, so keep LF on every checkout.
+# CRLF here would inflate the server-instructions byte budget and break the configurator's
+# byte-identical section replace (its splice normalizes the section's trailing newline to LF).
+src/Zphil.Roz/server-instructions.md text eol=lf
+src/Zphil.Roz/project-instructions-snippet.md text eol=lf
+src/Zphil.Roz/Resources/*.md text eol=lf

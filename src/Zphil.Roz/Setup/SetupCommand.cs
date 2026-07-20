@@ -17,6 +17,7 @@ namespace Zphil.Roz.Setup;
 internal static class SetupCommand
 {
     private const string AllClientsToken = "all";
+    private const string PluginFlagConflictMessage = "--plugin and --no-plugin cannot be combined.";
 
     private static readonly IReadOnlyList<IClientConfigurator> AllConfigurators =
     [
@@ -95,21 +96,38 @@ internal static class SetupCommand
         return detected;
     }
 
-    public static async Task RunAsync(string? toolsValue, string? clientArg)
+    /// <summary>
+    ///     Runs the full onboarding flow: environment checks, per-client configuration, and
+    ///     workspace validation.
+    /// </summary>
+    /// <returns>
+    ///     The process exit code. System.CommandLine propagates a <c>Task&lt;int&gt;</c> action's
+    ///     result, whereas <see cref="Environment.ExitCode" /> is overridden by Program.cs's
+    ///     <c>int</c> return and never surfaces.
+    /// </returns>
+    public static async Task<int> RunAsync(string? toolsValue, string? clientArg, bool pluginFlag = false, bool noPluginFlag = false)
     {
+        // Same step 0 as server startup: the environment checks and the in-process workspace
+        // validation below must see the .roz.json-seeded values the real server will run with.
+        ProjectConfigSeedResult configSeed = ProjectConfigSeeder.Seed();
         string workingDirectory = Directory.GetCurrentDirectory();
 
         if (toolsValue is not null && !ToolSelector.IsValid(toolsValue, out string? validationError))
         {
             Console.Error.WriteLine(validationError);
-            Environment.ExitCode = 1;
-            return;
+            return 1;
+        }
+
+        if (pluginFlag && noPluginFlag)
+        {
+            Console.Error.WriteLine(PluginFlagConflictMessage);
+            return 1;
         }
 
         IReadOnlyList<IClientConfigurator>? configurators = ResolveConfigurators(clientArg, workingDirectory);
         if (configurators is null)
         {
-            return;
+            return 1;
         }
 
         Console.WriteLine();
@@ -117,25 +135,37 @@ internal static class SetupCommand
         Console.WriteLine(new string('=', 40));
         Console.WriteLine($"Working directory: {workingDirectory}");
 
+        ClaudePluginMode pluginMode = ClaudePluginMode.Classic;
+        if (configurators.Any(c => c is ClaudeCodeConfigurator))
+        {
+            // The settings scan is only consulted when no flag forces the mode — an explicit
+            // --plugin/--no-plugin wins outright, so skip the file reads entirely.
+            ClaudePluginDetection detection = pluginFlag || noPluginFlag
+                ? new ClaudePluginDetection(false, null, null)
+                : await ClaudePluginDetector.DetectAsync(workingDirectory, ClaudePluginDetector.DefaultUserSettingsPath);
+            pluginMode = ResolvePluginMode(pluginFlag, noPluginFlag, detection);
+            PrintPluginVerdict(pluginMode, detection, pluginFlag, noPluginFlag, workingDirectory);
+        }
+
         PrintStepHeader("Step 1: Checking environment...");
 
         List<EnvironmentChecker.CheckResult> checks =
-            await EnvironmentChecker.RunAllChecksAsync(workingDirectory);
+            await EnvironmentChecker.RunAllChecksAsync(workingDirectory, configSeed);
         Console.WriteLine(EnvironmentChecker.FormatResults(checks));
 
         bool allPassed = checks.All(r => r.Passed);
         if (!allPassed)
         {
             Console.WriteLine("Fix the issues above and re-run 'roz-mcp setup'.");
-            Environment.ExitCode = 1;
-            return;
+            return 1;
         }
 
+        ClientSetupRequest request = new(workingDirectory, toolsValue, pluginMode);
         var stepIndex = 2;
         foreach (IClientConfigurator configurator in configurators)
         {
             PrintStepHeader($"Step {stepIndex}: Configuring {configurator.DisplayName}...");
-            await configurator.ConfigureAsync(workingDirectory, toolsValue);
+            await configurator.ConfigureAsync(request);
             stepIndex++;
         }
 
@@ -163,14 +193,21 @@ internal static class SetupCommand
         Console.WriteLine($"Logs: {SerilogConfiguration.LogDirectory}\\roz-mcp-<date>.log");
         Console.WriteLine($"(Default level is Warning. Set {RozEnvVars.LogLevel.Name}=Information for lifecycle events.)");
 
-        PrintCurrentEnvVars();
+        PrintCurrentEnvVars(configSeed);
+
+        // Workspace-validation warnings still count as success: the config was written.
+        return 0;
     }
 
-    private static void PrintCurrentEnvVars()
+    private static void PrintCurrentEnvVars(ProjectConfigSeedResult configSeed)
     {
+        HashSet<string> fromConfigFile = configSeed.AppliedNames.ToHashSet(StringComparer.Ordinal);
+
         List<string> set = RozEnvVars.All
             .Where(v => v.CurrentValue is not null)
-            .Select(v => $"{v.Name}={v.CurrentValue}")
+            .Select(v => fromConfigFile.Contains(v.Name)
+                ? $"{v.Name}={v.CurrentValue} (from {ProjectConfigSeeder.FileName})"
+                : $"{v.Name}={v.CurrentValue}")
             .ToList();
 
         if (set.Count > 0)
@@ -179,6 +216,10 @@ internal static class SetupCommand
         }
     }
 
+    /// <summary>
+    ///     Resolves the configurators to run, or <c>null</c> after printing the error — the caller
+    ///     turns <c>null</c> into a non-zero exit code.
+    /// </summary>
     private static IReadOnlyList<IClientConfigurator>? ResolveConfigurators(string? clientArg, string workingDirectory)
     {
         if (clientArg is not null)
@@ -190,7 +231,6 @@ internal static class SetupCommand
             catch (UserErrorException ex)
             {
                 Console.Error.WriteLine(ex.Message);
-                Environment.ExitCode = 1;
                 return null;
             }
         }
@@ -210,8 +250,83 @@ internal static class SetupCommand
         var detectedKeys = String.Join(", ", detected.Select(c => c.ClientKey));
         Console.Error.WriteLine($"Multiple client marker directories detected: {detectedKeys}.");
         Console.Error.WriteLine($"Re-run with --client=<{ValidClientKeys()}|all> (comma-separate for multiple).");
-        Environment.ExitCode = 1;
         return null;
+    }
+
+    /// <summary>
+    ///     Resolves the Claude Code plugin mode: an explicit <c>--plugin</c>/<c>--no-plugin</c>
+    ///     flag wins (both at once is a <see cref="UserErrorException" />); otherwise the
+    ///     <paramref name="detection" /> verdict from the settings-file scan decides.
+    /// </summary>
+    internal static ClaudePluginMode ResolvePluginMode(bool pluginFlag, bool noPluginFlag, ClaudePluginDetection detection)
+    {
+        if (pluginFlag && noPluginFlag)
+        {
+            throw new UserErrorException(PluginFlagConflictMessage);
+        }
+
+        if (pluginFlag)
+        {
+            return ClaudePluginMode.Plugin;
+        }
+
+        if (noPluginFlag)
+        {
+            return ClaudePluginMode.Classic;
+        }
+
+        return detection.IsPlugin ? ClaudePluginMode.Plugin : ClaudePluginMode.Classic;
+    }
+
+    private static void PrintPluginVerdict(
+        ClaudePluginMode mode,
+        ClaudePluginDetection detection,
+        bool pluginFlag,
+        bool noPluginFlag,
+        string workingDirectory) =>
+        Console.WriteLine(BuildPluginVerdict(mode, detection, pluginFlag, noPluginFlag, workingDirectory));
+
+    /// <summary>
+    ///     States the plugin-mode verdict, its basis, and the override flag — always printed,
+    ///     because both error directions are real: a false positive means no server gets
+    ///     registered, a false negative means the server is registered twice.
+    /// </summary>
+    /// <remarks>ASCII only: console code pages can garble non-ASCII punctuation.</remarks>
+    internal static string BuildPluginVerdict(
+        ClaudePluginMode mode,
+        ClaudePluginDetection detection,
+        bool pluginFlag,
+        bool noPluginFlag,
+        string workingDirectory)
+    {
+        string basis;
+        if (pluginFlag)
+        {
+            basis = "--plugin";
+        }
+        else if (noPluginFlag)
+        {
+            basis = "--no-plugin";
+        }
+        else if (detection.MatchedKey is not null)
+        {
+            string state = detection.IsPlugin ? "enabled" : "disabled";
+            basis = $"'{detection.MatchedKey}' {state} in {DisplayPath(detection.SourceFile!, workingDirectory)}";
+        }
+        else
+        {
+            basis = "no roz-mcp plugin enablement found in Claude Code settings";
+        }
+
+        return mode == ClaudePluginMode.Plugin
+            ? $"Claude Code: plugin mode ({basis}). The plugin provides the server; no .mcp.json entry will be written. Wrong? Re-run with --no-plugin."
+            : $"Claude Code: classic mode ({basis}). The server will be registered in .mcp.json. Using the roz-mcp plugin here? Re-run with --plugin.";
+    }
+
+    private static string DisplayPath(string path, string workingDirectory)
+    {
+        string relative = Path.GetRelativePath(workingDirectory, path);
+        return relative.StartsWith("..", StringComparison.Ordinal) ? path : relative;
     }
 
     private static string BuildFinalMessage(IReadOnlyList<IClientConfigurator> configurators)

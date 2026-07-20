@@ -7,6 +7,7 @@ using Zphil.Roz.Enums;
 using Zphil.Roz.Extensions;
 using Zphil.Roz.Infrastructure;
 using Zphil.Roz.Models;
+using Zphil.Roz.Resources;
 
 namespace Zphil.Roz.Services;
 
@@ -211,14 +212,16 @@ internal sealed class CodeFixService(
             if (keys[0] is null && actions.Count > 1)
             {
                 throw new UserErrorException(
-                    $"The fixer for '{id}' offers multiple fixes with no equivalence key — cannot disambiguate: {DescribeFlavors(actions)}");
+                    $"The fixer for '{id}' offers multiple fixes with no equivalence key — cannot disambiguate: {DescribeFlavors(actions)}."
+                    + $" Equivalence keys are documented in the {RozResources.EditingGuideUri} MCP resource.");
             }
 
             return keys[0];
         }
 
         throw new UserErrorException(
-            $"The fixer for '{id}' offers multiple fixes — pass equivalenceKey to choose: {DescribeFlavors(actions)}");
+            $"The fixer for '{id}' offers multiple fixes — pass equivalenceKey to choose: {DescribeFlavors(actions)}."
+            + $" Equivalence keys are documented in the {RozResources.EditingGuideUri} MCP resource.");
     }
 
     private static string DescribeFlavors(IEnumerable<(string Title, string? Key)> actions) =>
